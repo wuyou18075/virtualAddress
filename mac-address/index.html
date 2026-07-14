@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-cn" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAC 地址生成器与厂商查询 - 本地版 | 本地版</title>
+  <meta name="description" content="本地运行的 MAC 地址生成器：多格式输出、按厂商约束 OUI、可选 IPv6 链路本地地址，并支持 MAC→厂商反查。仅供开发测试。">
+  <script>
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.backgroundColor = "#111827";
+  </script>
+  <link rel="stylesheet" href="../src/css/main.css">
+  <style>
+    .mac-list { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .mac-row { display:flex; justify-content:space-between; gap:1rem; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+    .mac-row .vendor { color:#9ca3af; font-size:0.85rem; }
+    .mac-row .ipv6 { color:#6b7280; font-size:0.8rem; }
+    .lookup-result { margin-top:0.75rem; }
+    .field-row { display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem; }
+    .field-row .state-select-wrapper { flex:1; min-width:160px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-container">
+      <a href="../" class="logo"><span>本地版</span></a>
+      <nav class="hidden md:flex">
+        <a href="../">首页</a>
+        <a href="../cn-address/">国内地址</a>
+        <a href="../hk-address/">香港</a>
+        <a href="../taxfree/">美国免税</a>
+        <a href="../usa-address/">美国</a>
+        <a href="../uk-address/">英国</a>
+        <a href="../ca-address/">加拿大</a>
+        <a href="../jp-address/">日本</a>
+        <a href="../tw-address/">台湾</a>
+        <a href="../de-address/">德国</a>
+        <a href="../sg-address/">新加坡</a>
+        <a href="../mac-address/">MAC 地址</a>
+      </nav>
+      <div class="header-actions">
+        <button id="mobile-menu-button" class="mobile-menu-btn" aria-expanded="false" aria-label="更多">
+          <span>更多</span>
+        </button>
+      </div>
+    </div>
+    <div id="mobile-menu" class="mobile-menu">
+      <a href="../">首页</a>
+      <a href="../cn-address/">国内地址</a>
+      <a href="../hk-address/">香港</a>
+      <a href="../taxfree/">美国免税</a>
+      <a href="../usa-address/">美国</a>
+      <a href="../uk-address/">英国</a>
+      <a href="../ca-address/">加拿大</a>
+      <a href="../jp-address/">日本</a>
+      <a href="../tw-address/">台湾</a>
+      <a href="../de-address/">德国</a>
+      <a href="../sg-address/">新加坡</a>
+      <a href="../mac-address/">MAC 地址</a>
+    </div>
+  </header>
+
+  <main>
+    <section id="hero" class="hero">
+      <div class="container">
+        <div class="hero-card">
+          <div class="hero-header">
+            <div class="hero-content">
+              <div class="hero-text">
+                <h1>免费的<span class="gradient-text">MAC 地址生成器</span>与厂商查询</h1>
+                <p>本地可运行版本。支持多种分隔格式、按厂商约束 OUI、单播/本地管理位、可选 IPv6 链路本地地址（EUI-64）。仅供开发测试。</p>
+              </div>
+              <div class="hero-controls">
+                <div class="field-row">
+                  <div class="state-select-wrapper">
+                    <label for="vendor-select">厂商 (OUI)</label>
+                    <select id="vendor-select" class="state-select">
+                      <option value="random" selected>随机 Random</option>
+                    </select>
+                  </div>
+                  <div class="state-select-wrapper">
+                    <label for="format-select">格式</label>
+                    <select id="format-select" class="state-select">
+                      <option value="colon" selected>冒号 00:1A:2B</option>
+                      <option value="hyphen">连字符 00-1A-2B</option>
+                      <option value="dot">点分 001A.2B3C</option>
+                      <option value="none">无分隔 001A2B</option>
+                      <option value="space">空格 00 1A 2B</option>
+                    </select>
+                  </div>
+                  <div class="state-select-wrapper">
+                    <label for="count-input">数量 (1-888)</label>
+                    <input id="count-input" class="state-select" type="number" min="1" max="888" value="1">
+                  </div>
+                </div>
+                <div class="optional-tools">
+                  <div class="tool-option">
+                    <label for="unicast-toggle" class="tool-label">单播地址</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="unicast-toggle" checked>
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="tool-option">
+                    <label for="laa-toggle" class="tool-label">本地管理位 (LAA)</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="laa-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="tool-option">
+                    <label for="ipv6-toggle" class="tool-label">附带 IPv6 链路本地</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="ipv6-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <button id="generate-mac-btn" class="generate-btn">生成 MAC 地址</button>
+              </div>
+            </div>
+          </div>
+          <div class="results-section">
+            <div class="results-header">
+              <h2>生成结果</h2>
+              <div class="results-actions">
+                <button id="copy-mac-btn" class="btn btn-primary">复制全部</button>
+              </div>
+            </div>
+            <div id="mac-result" class="address-result empty">
+              <div class="text-center"><p>点击上方按钮生成 MAC 地址。</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="saved-section">
+          <div class="saved-header">
+            <h3>MAC → 厂商反查</h3>
+          </div>
+          <div style="padding:1rem;">
+            <div class="share-link-row">
+              <input id="lookup-input" class="state-select" placeholder="输入 MAC 或 OUI 前缀，如 00:1A:2B 或 001A2B3C4D5E">
+              <button id="lookup-btn" class="btn btn-primary">查询</button>
+            </div>
+            <div id="lookup-result" class="lookup-result"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { generateMAC, getAvailableVendors } from "../src/js/mac-generator.js";
+    import { getDataFilePath } from "../src/js/config.js";
+
+    const $ = (id) => document.getElementById(id);
+
+    /**
+     * 填充厂商下拉框。取厂商去重列表，最多展示常见前若干项以免过长。
+     */
+    async function initVendorSelect() {
+      try {
+        const vendors = await getAvailableVendors();
+        const sel = $("vendor-select");
+        vendors.forEach((v) => {
+          const opt = document.createElement("option");
+          opt.value = v;
+          opt.textContent = v;
+          sel.appendChild(opt);
+        });
+      } catch (e) {
+        console.warn("加载厂商列表失败：", e);
+      }
+    }
+
+    /**
+     * 渲染生成的 MAC 列表。
+     * @param {Array<{mac:string,vendor:?string,ipv6:?string}>} list
+     */
+    function renderMacList(list) {
+      const box = $("mac-result");
+      box.classList.remove("empty");
+      const rows = list.map((r) => {
+        const vendor = r.vendor ? `<span class="vendor">${r.vendor}</span>` : `<span class="vendor">未知厂商</span>`;
+        const ipv6 = r.ipv6 ? `<div class="ipv6">IPv6: ${r.ipv6}</div>` : "";
+        return `<div class="mac-row"><div><strong>${r.mac}</strong>${ipv6}</div>${vendor}</div>`;
+      }).join("");
+      box.innerHTML = `<div class="mac-list">${rows}</div>`;
+    }
+
+    async function handleGenerate() {
+      const vendor = $("vendor-select").value;
+      const format = $("format-select").value;
+      let count = parseInt($("count-input").value, 10);
+      if (Number.isNaN(count) || count < 1) count = 1;
+      if (count > 888) count = 888;
+      const unicast = $("unicast-toggle").checked;
+      const laa = $("laa-toggle").checked;
+      const showIPv6 = $("ipv6-toggle").checked;
+      try {
+        const list = await generateMAC({ count, vendor, format, unicast, laa, showIPv6 });
+        renderMacList(list);
+        $("copy-mac-btn").dataset.text = list.map((r) => r.mac).join("\n");
+      } catch (e) {
+        $("mac-result").innerHTML = `<div class="text-center"><p>生成失败：${e.message}</p></div>`;
+      }
+    }
+
+    // ---- 厂商反查：加载 OUI 表，按前三字节前缀匹配 ----
+    let ouiDb = null;
+    /**
+     * 加载 OUI 映射表（{"AA:BB:CC":"Vendor"}），带多路径回退。
+     * @returns {Promise<Object>}
+     */
+    async function loadOui() {
+      if (ouiDb) return ouiDb;
+      const fileName = getDataFilePath("macOui").split("/").pop();
+      const paths = [`../data/${fileName}`, `/data/${fileName}`, `data/${fileName}`];
+      for (const p of paths) {
+        try {
+          const res = await fetch(p);
+          if (res.ok) { ouiDb = await res.json(); return ouiDb; }
+        } catch (e) { /* 尝试下一路径 */ }
+      }
+      throw new Error("无法加载 OUI 数据");
+    }
+
+    /**
+     * 从任意 MAC/前缀输入提取前三字节，返回 "AA:BB:CC" 形式；无法解析返回 null。
+     * @param {string} input
+     * @returns {?string}
+     */
+    function toOuiPrefix(input) {
+      const hex = (input || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+      if (hex.length < 6) return null;
+      return `${hex.slice(0, 2)}:${hex.slice(2, 4)}:${hex.slice(4, 6)}`;
+    }
+
+    async function handleLookup() {
+      const box = $("lookup-result");
+      const prefix = toOuiPrefix($("lookup-input").value);
+      if (!prefix) {
+        box.innerHTML = `<p class="vendor">请输入至少前 3 字节（6 个十六进制字符）。</p>`;
+        return;
+      }
+      try {
+        const db = await loadOui();
+        const vendor = db[prefix];
+        if (vendor) {
+          box.innerHTML = `<div class="mac-row"><div><strong>${prefix}</strong></div><span class="vendor">${vendor}</span></div>`;
+        } else {
+          box.innerHTML = `<p class="vendor">前缀 ${prefix} 未在 OUI 表中找到（可能为随机/本地管理地址）。</p>`;
+        }
+      } catch (e) {
+        box.innerHTML = `<p class="vendor">查询失败：${e.message}</p>`;
+      }
+    }
+
+    $("generate-mac-btn").addEventListener("click", handleGenerate);
+    $("lookup-btn").addEventListener("click", handleLookup);
+    $("lookup-input").addEventListener("keydown", (e) => { if (e.key === "Enter") handleLookup(); });
+    $("copy-mac-btn").addEventListener("click", (e) => {
+      const text = e.currentTarget.dataset.text || "";
+      if (text) navigator.clipboard?.writeText(text);
+    });
+
+    // 移动菜单开关
+    $("mobile-menu-button")?.addEventListener("click", () => {
+      const m = $("mobile-menu");
+      m.classList.toggle("open");
+    });
+
+    initVendorSelect();
+  </script>
+</body>
+</html>
