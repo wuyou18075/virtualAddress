@@ -52,5 +52,4 @@ description: VirtualAddress 文件索引与职责
 - `wrangler.toml`：CF Workers + Assets 配置
 
 ## 测试与 CI
-- `test/unit.mjs`：Node 单测（Node --test）
-- `.github/workflows/deploy.yml`：test → deploy（main 分支 push）
+- `package.json` / `package-lock.json`：固定 Wrangler 版本及 test/check/deploy 脚本，供本地与 Cloudflare Bui

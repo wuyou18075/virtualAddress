@@ -1,0 +1,21 @@
+# Repository metadata and development files
+.git/
+.github/
+.wrangler/
+node_modules/
+.gitignore
+
+# Tests and project documentation
+test/
+test-harness.mjs
+*.md
+LICENSE
+
+# Package and provider configuration files
+package.json
+package-lock.json
+.vercelignore
+vercel.json
+wrangler.toml
+
+# Worker entry is deployed as c
