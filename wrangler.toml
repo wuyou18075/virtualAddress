@@ -1,4 +1,5 @@
 name = "virtualaddress"
 compatibility_date = "2026-07-14"
+main = "src/worker.js"
 
-pages_build_output_dir = "."
+assets = { directory = ".", not_found_handling = "auto" }
