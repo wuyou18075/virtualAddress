@@ -1,5 +1,33 @@
 // Utility Functions
 
+
+/**
+ * Escape text for safe insertion into HTML body content.
+ * @param {*} value
+ * @returns {string}
+ */
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Escape text for safe insertion into double-quoted HTML attributes.
+ * @param {*} value
+ * @returns {string}
+ */
+export function attrEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/'/g, "&#39;");
+}
+
 // Copy text to clipboard
 export function copyToClipboard(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -27,14 +55,33 @@ export function copyToClipboard(text) {
   }
 }
 
-// Generate random number between min and max (inclusive)
+/**
+ * Cryptographically strong integer in [min, max] (inclusive).
+ * Falls back to Math.random when crypto is unavailable.
+ */
 export function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  const lo = Math.ceil(min);
+  const hi = Math.floor(max);
+  if (hi < lo) return lo;
+  const span = hi - lo + 1;
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const buf = new Uint32Array(1);
+    // rejection sampling to avoid modulo bias
+    const maxUnbiased = Math.floor(0x100000000 / span) * span;
+    let x;
+    do {
+      crypto.getRandomValues(buf);
+      x = buf[0];
+    } while (x >= maxUnbiased);
+    return lo + (x % span);
+  }
+  return Math.floor(Math.random() * span) + lo;
 }
 
 // Get random element from array
 export function randomElement(array) {
-  return array[Math.floor(Math.random() * array.length)];
+  if (!array || array.length === 0) return undefined;
+  return array[randomInt(0, array.length - 1)];
 }
 
 // Generate random phone number
@@ -124,10 +171,10 @@ export function showToast(message, type = 'success') {
   }, 3000);
 }
 
-// Add CSS animation if not exists
-if (!document.getElementById('toast-animations')) {
-  const style = document.createElement('style');
-  style.id = 'toast-animations';
+// Add CSS animation if not exists (browser only)
+if (typeof document !== "undefined" && !document.getElementById("toast-animations")) {
+  const style = document.createElement("style");
+  style.id = "toast-animations";
   style.textContent = `
     @keyframes slideIn {
       from {

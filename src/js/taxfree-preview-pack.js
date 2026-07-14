@@ -2,7 +2,7 @@
  * 免税州演示样例包（与 data/tf-preview.pack.json 一致）
  * 路径由 config.dataFiles.taxfreePreviewPack 决定（仅经 loadDataById，避免与 config 的导入边界问题）
  */
-import { loadDataById } from './address-generator.js';
+import { loadDataById } from './data-loader.js';
 import { randomElement, generatePhoneNumber, generateUsPhoneForState } from './utils.js';
 
 let memoryCache = null;

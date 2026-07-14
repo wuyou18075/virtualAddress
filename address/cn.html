@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-cn" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>国内地址转换器 - 中文转 Google 英文地址 | 本地版</title>
+  <meta name="description" content="输入中文地址，转换为 Google 地图习惯的英文地址格式，附邮编与 Google 地图跳转链接；或开启定位自动获取当前位置附近地址。基于 OpenStreetMap，无需 API Key。">
+  <script>
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.backgroundColor = "#111827";
+  </script>
+  <link rel="stylesheet" href="../src/css/main.css">
+  <style>
+    .field-row { display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.75rem; }
+    .field-row .state-select-wrapper { flex:1; min-width:220px; }
+    .en-addr { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .warn { color:#fbbf24 !important; }
+    .hint { color:#9ca3af; font-size:0.82rem; margin-top:0.75rem; }
+    #status { color:#9ca3af; font-size:0.85rem; margin-top:0.5rem; min-height:1.2em; }
+    /* 复制成功高亮反馈 */
+    .address-card { cursor:pointer; transition:background-color .15s, box-shadow .15s; }
+    .address-card.copied { box-shadow:0 0 0 2px #34d399 inset; }
+    /* 验证按钮排版，与其他页一致 */
+    .address-actions-bottom { display:flex; align-items:center; gap:0.5rem; margin-top:0.6rem; flex-wrap:wrap; }
+    .btn-verify-map {
+      text-decoration:none; display:inline-flex; align-items:center; gap:0.25rem;
+      padding:0.35rem 0.7rem; font-size:0.8rem; border-radius:0.4rem;
+      background:#1d4ed8; color:#fff; border:1px solid #1e40af; cursor:pointer;
+      transition:background-color .15s;
+    }
+    .btn-verify-map:hover { background:#2563eb; }
+    /* 住宅地址判定徽章 */
+    .resi-badge { display:flex; align-items:center; flex-wrap:wrap; gap:0.5rem 0.75rem; padding:0.6rem 0.9rem; border-radius:0.5rem; font-weight:700; margin-bottom:0.9rem; border:1px solid transparent; }
+    .resi-badge .resi-reason { font-weight:400; font-size:0.82rem; opacity:0.9; }
+    .resi-yes { background:rgba(16,185,129,0.15); color:#34d399; border-color:rgba(16,185,129,0.5); }
+    .resi-no { background:rgba(251,191,36,0.15); color:#fbbf24; border-color:rgba(251,191,36,0.5); }
+  </style>
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main>
+    <section id="hero" class="hero">
+      <div class="container">
+        <div class="hero-card">
+          <div class="hero-header">
+            <div class="hero-content">
+              <div class="hero-text">
+                <h1>国内地址<span class="gradient-text">转 Google 英文地址</span></h1>
+                <p>输入中文具体地址，转换为 Google 地图习惯的英文地址格式，并附邮编与地图跳转链接；或开启定位自动获取当前位置附近地址。基于 OpenStreetMap，无需 API Key，仅供开发测试。</p>
+              </div>
+              <div class="hero-controls">
+                <div class="field-row">
+                  <div class="state-select-wrapper">
+                    <label for="addr-input">中文地址</label>
+                    <input id="addr-input" class="state-select" placeholder="如：北京市朝阳区建国路88号 SOHO现代城">
+                  </div>
+                </div>
+                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                  <button id="convert-btn" class="generate-btn" style="flex:1;">转换为英文地址</button>
+                  <button id="locate-btn" class="btn btn-primary" style="flex:1;">开启定位自动获取</button>
+                </div>
+                <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem;">
+                  <button id="ip-btn" class="btn btn-green" style="flex:1;">按 IP 随机附近地址</button>
+                </div>
+                <div id="status"></div>
+              </div>
+            </div>
+          </div>
+          <div class="results-section">
+            <div class="results-header">
+              <h2>转换结果</h2>
+              <div class="results-actions">
+                <button id="copy-en-btn" class="btn btn-primary">复制英文地址</button>
+                <button id="geo-save-btn" class="btn btn-green">保存</button>
+              </div>
+            </div>
+            <div id="cn-result" class="address-result empty">
+              <div class="text-center"><p>输入中文地址后点击转换，或点击“开启定位自动获取”。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="saved-section">
+          <div class="saved-header">
+            <h3>已保存的地址</h3>
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <button id="geo-clear-btn" class="btn btn-primary" style="background-color:#dc2626;color:white;">全部删除</button>
+              <div class="export-menu-wrapper">
+                <button id="geo-export-btn" class="btn btn-primary">导出</button>
+                <div id="geo-export-menu" class="export-menu">
+                  <button id="geo-export-csv">CSV</button>
+                  <button id="geo-export-json">JSON</button>
+                </div>
+              </div>
+              <button id="geo-import-btn" class="btn btn-primary">导入</button>
+              <input id="geo-import-input" type="file" accept="application/json,.json" style="display:none;">
+            </div>
+          </div>
+          <div id="geo-saved" class="address-table">
+            <div class="empty-state"><p>暂无保存的地址</p></div>
+          </div>
+        </div>
+        <div class="saved-section">
+          <div class="saved-header"><h3>说明</h3></div>
+          <div class="hint" style="padding:0 1rem 1rem;">
+            数据来自 OpenStreetMap / Nominatim（免费、无需 Key）。英文地址为其罗马化结果，语序为“门牌+街道+区+市+省+国家”。<br>
+            <strong>“按 IP 随机附近地址”</strong>：按当前出口 IP 定位所在城市，在附近随机取点并反查，只保留含街道/门牌的具体地址；结果附「按坐标验证」链接（<code>query=纬度,经度</code>），谷歌地图可精确落点，不受中文地址文本匹配不到的影响。<br>
+            中国境内的门牌级与邮编数据覆盖不如高德/百度，罗马化的地址文本在谷歌地图按文字搜索时可能查不到——此时请用<strong>坐标链接</strong>验证（始终可定位）。<br>
+            <span class="warn">若长时间无响应，可能是网络无法访问 openstreetmap.org 或 IP 定位服务；请确认网络后重试。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { mountShell } from "../src/js/shell.js";
+    mountShell({ location: "address" });
+    import { initGeoPage } from "../src/js/geo-page.js";
+    initGeoPage();
+  </script>
+</body>
+</html>

@@ -3,110 +3,102 @@
 import { randomElement } from './utils.js';
 import { getConfig, getDataFilePath } from './config.js';
 
-// Data cache to reduce server requests
+// Memory cache for OUI data. macOuiData is ~50KB — safe for localStorage with size guard.
 const dataCache = new Map();
 const CACHE_PREFIX = 'mac_data_cache_';
-const CACHE_VERSION = 'v1';
-const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_VERSION = 'v2';
+const CACHE_EXPIRY = 24 * 60 * 60 * 1000;
+const LOCALSTORAGE_MAX_BYTES = 80 * 1024;
 
-// Load OUI data from JSON file with caching (memory + localStorage)
+function buildMacDataPaths(filePath, fileName, config) {
+  const paths = [];
+  if (config.dataBasePath) {
+    const basePath = config.dataBasePath.endsWith('/')
+      ? config.dataBasePath
+      : config.dataBasePath + '/';
+    paths.push(basePath + fileName);
+  }
+  if (config.autoDetectPaths !== false) {
+    const pathParts = (window.location.pathname || '')
+      .split('/')
+      .filter((p) => p && p !== 'index.html' && !p.endsWith('.html'));
+    const depth = pathParts.length;
+    const relPrefix = depth > 0 ? '../'.repeat(depth) : '';
+    paths.push(
+      `/data/${fileName}`,
+      `${relPrefix}data/${fileName}`,
+      `../../data/${fileName}`,
+      `../data/${fileName}`,
+      `data/${fileName}`,
+      filePath,
+    );
+  } else if (!config.dataBasePath) {
+    paths.push(filePath, `/data/${fileName}`);
+  }
+  return [...new Set(paths)];
+}
+
 async function loadOuiData() {
   const filePath = getDataFilePath('macOui');
-  
+
   try {
-    // Check memory cache first
     if (dataCache.has(filePath)) {
       return dataCache.get(filePath);
     }
-    
-    // Check localStorage cache
+
     const cacheKey = CACHE_PREFIX + filePath;
     try {
       const cachedData = localStorage.getItem(cacheKey);
       if (cachedData) {
         const parsed = JSON.parse(cachedData);
-        if (parsed.timestamp && (Date.now() - parsed.timestamp) < CACHE_EXPIRY) {
+        if (
+          parsed
+          && parsed.version === CACHE_VERSION
+          && parsed.timestamp
+          && (Date.now() - parsed.timestamp) < CACHE_EXPIRY
+        ) {
           dataCache.set(filePath, parsed.data);
           return parsed.data;
-        } else {
-          localStorage.removeItem(cacheKey);
         }
+        localStorage.removeItem(cacheKey);
       }
     } catch (e) {
       console.warn('localStorage cache read failed:', e);
     }
-    
-    // Get user configuration
+
     const config = getConfig();
     const fileName = filePath.split('/').pop();
-    
-    // Build paths array based on configuration
-    const paths = [];
-    
-    // If user has configured a custom dataBasePath, use it first
-    if (config.dataBasePath) {
-      // Ensure trailing slash
-      const basePath = config.dataBasePath.endsWith('/') ? config.dataBasePath : config.dataBasePath + '/';
-      paths.push(basePath + fileName);
-    }
-    
-    // If autoDetectPaths is enabled (default), add automatic path detection
-    // This preserves the original behavior for mockaddress.com
-    if (config.autoDetectPaths !== false) {
-      const currentPath = window.location.pathname;
-      
-      // Try multiple possible paths
-      // Priority: relative path (../data/) first, then absolute paths
-      paths.push(
-        `../data/${fileName}`,          // Relative: go up one level, then into data (works for all language versions)
-        `/data/${fileName}`,            // Absolute path from root (for Chinese version)
-        `data/${fileName}`,             // Relative to current directory (fallback)
-        filePath                        // Original path (fallback)
-      );
-      
-      // Add language-specific absolute paths if we're in a language subdirectory
-      const pathParts = currentPath.split('/').filter(p => p && p !== 'index.html' && p !== '');
-      if (pathParts.length >= 1 && ['en', 'ru', 'es', 'pt'].includes(pathParts[0])) {
-        // We're in a language subdirectory, add language-specific absolute path
-        const lang = pathParts[0];
-        paths.splice(paths.length - 2, 0, `/${lang}/data/${fileName}`); // Insert before fallback paths
-      }
-    }
-    
+    const paths = buildMacDataPaths(filePath, fileName, config);
+
     let lastError = null;
     for (const path of paths) {
       try {
-        const response = await fetch(path, {
-          // Add cache control to help browser cache
-          cache: 'default'
-        });
+        const response = await fetch(path, { cache: 'default' });
         if (response.ok) {
           const data = await response.json();
           dataCache.set(filePath, data);
-          
-          // Store in localStorage
           try {
             const cacheData = {
-              data: data,
+              data,
               timestamp: Date.now(),
-              version: CACHE_VERSION
+              version: CACHE_VERSION,
             };
-            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            const serialized = JSON.stringify(cacheData);
+            if (serialized.length <= LOCALSTORAGE_MAX_BYTES) {
+              localStorage.setItem(cacheKey, serialized);
+            }
           } catch (e) {
             console.warn('localStorage cache write failed:', e);
           }
-          
           return data;
-        } else {
-          lastError = `HTTP ${response.status} for ${path}`;
         }
+        lastError = `HTTP ${response.status} for ${path}`;
       } catch (e) {
-        // Record error but continue trying other paths
         lastError = e.message || e.toString();
         continue;
       }
     }
-    
+
     console.error(`Failed to load ${filePath}. Tried paths:`, paths, 'Last error:', lastError);
     throw new Error(`Failed to load ${filePath}: ${lastError || 'All paths failed'}`);
   } catch (error) {

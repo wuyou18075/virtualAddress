@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-cn" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>加拿大地址生成器 - 本地版</title>
+  <meta name="description" content="本地运行的加拿大地址生成器，覆盖各省与地区，支持姓名与邮政编码。">
+  <script>
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.backgroundColor = "#111827";
+  </script>
+  <link rel="stylesheet" href="../src/css/main.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main>
+    <section id="hero" class="hero">
+      <div class="container">
+        <div class="hero-card">
+          <div class="hero-header">
+            <div class="hero-content">
+              <div class="hero-text">
+                <h1>免费的<span class="gradient-text">加拿大地址在线生成器</span></h1>
+                <p>本地可运行版本。覆盖加拿大各省与地区，生成姓名、街道、城市、省份与邮政编码。仅供开发测试。</p>
+              </div>
+              <div class="hero-controls">
+                <div class="state-select-wrapper">
+                  <label for="province-select">选择省份</label>
+                  <select id="province-select" class="state-select">
+                    <option value="RANDOM" selected>随机 Random</option>
+                  </select>
+                </div>
+                <div class="optional-tools">
+                  <div class="tool-option">
+                    <label for="generate-identity-toggle" class="tool-label">生成身份信息</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="generate-identity-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="tool-option">
+                    <label for="generate-card-toggle" class="tool-label">生成信用卡信息</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="generate-card-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <p class="hint" style="margin-top:0.5rem;">信用卡为 Luhn 合法<strong>测试号</strong>，不可用于真实交易。</p>
+                <button id="generate-address-btn" class="generate-btn">生成地址</button>
+              </div>
+            </div>
+          </div>
+          <div class="results-section">
+            <div class="results-header">
+              <h2>生成结果</h2>
+              <div class="results-actions">
+                <button id="share-current" class="btn btn-primary">分享</button>
+                <button id="copy-full-info" class="btn btn-primary">复制全部</button>
+                <button id="save-to-list-btn" class="btn btn-green">保存</button>
+              </div>
+            </div>
+            <div id="address-result" class="address-result empty">
+              <div class="text-center"><p>点击上方按钮生成加拿大地址。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="saved-section">
+          <div class="saved-header">
+            <h3>已保存的地址</h3>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <button id="clear-all-btn" class="btn btn-primary" style="background-color:#dc2626;color:white;">全部删除</button>
+              <div class="export-menu-wrapper">
+                <button id="export-menu-btn" class="btn btn-primary">导出</button>
+                <div id="export-menu" class="export-menu">
+                  <button id="export-csv-item">CSV</button>
+                  <button id="export-json-item">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="saved-addresses" class="address-table">
+            <div class="empty-state"><p>暂无保存的地址</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="share-modal-overlay" class="modal-overlay"></div>
+  <div id="share-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>分享</h3>
+        <button id="share-modal-close" class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div>
+          <label for="share-preview">预览（只读）</label>
+          <textarea id="share-preview" readonly></textarea>
+        </div>
+        <div>
+          <label for="share-link">分享链接</label>
+          <div class="share-link-row">
+            <input id="share-link" readonly>
+            <button id="copy-share-link" class="btn btn-primary">复制</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="copy-share-text" class="btn">复制内容</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { mountShell } from "../src/js/shell.js";
+    import { initPage, handleGenerateAddress, displaySavedAddresses, initProvinceSelect } from "../src/js/main.js";
+    import { generateCAAddress } from "../src/js/generators/ca.js";
+    mountShell({ location: "address" });
+    initProvinceSelect();
+    initPage({
+      generateHandler: async () => {
+        const sel = document.getElementById("province-select");
+        const selected = sel ? sel.value : "RANDOM";
+        const generateIdentity = document.getElementById("generate-identity-toggle")?.checked || false;
+        const generateCreditCard = document.getElementById("generate-card-toggle")?.checked || false;
+        await handleGenerateAddress(generateCAAddress, selected, generateIdentity, generateCreditCard);
+      },
+      showSavedAddresses: true,
+    });
+    setTimeout(() => displaySavedAddresses(), 100);
+  </script>
+</body>
+</html>

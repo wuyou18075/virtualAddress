@@ -1,0 +1,272 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/data/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
+    {
+      "source": "/src/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/usa-address",
+      "destination": "/address/usa.html",
+      "permanent": true
+    },
+    {
+      "source": "/usa-address/:path*",
+      "destination": "/address/usa.html",
+      "permanent": true
+    },
+    {
+      "source": "/cn-address",
+      "destination": "/address/cn.html",
+      "permanent": true
+    },
+    {
+      "source": "/cn-address/:path*",
+      "destination": "/address/cn.html",
+      "permanent": true
+    },
+    {
+      "source": "/hk-address",
+      "destination": "/address/hk.html",
+      "permanent": true
+    },
+    {
+      "source": "/hk-address/:path*",
+      "destination": "/address/hk.html",
+      "permanent": true
+    },
+    {
+      "source": "/uk-address",
+      "destination": "/address/uk.html",
+      "permanent": true
+    },
+    {
+      "source": "/uk-address/:path*",
+      "destination": "/address/uk.html",
+      "permanent": true
+    },
+    {
+      "source": "/ca-address",
+      "destination": "/address/ca.html",
+      "permanent": true
+    },
+    {
+      "source": "/ca-address/:path*",
+      "destination": "/address/ca.html",
+      "permanent": true
+    },
+    {
+      "source": "/jp-address",
+      "destination": "/address/jp.html",
+      "permanent": true
+    },
+    {
+      "source": "/jp-address/:path*",
+      "destination": "/address/jp.html",
+      "permanent": true
+    },
+    {
+      "source": "/tw-address",
+      "destination": "/address/tw.html",
+      "permanent": true
+    },
+    {
+      "source": "/tw-address/:path*",
+      "destination": "/address/tw.html",
+      "permanent": true
+    },
+    {
+      "source": "/de-address",
+      "destination": "/address/de.html",
+      "permanent": true
+    },
+    {
+      "source": "/de-address/:path*",
+      "destination": "/address/de.html",
+      "permanent": true
+    },
+    {
+      "source": "/sg-address",
+      "destination": "/address/sg.html",
+      "permanent": true
+    },
+    {
+      "source": "/sg-address/:path*",
+      "destination": "/address/sg.html",
+      "permanent": true
+    },
+    {
+      "source": "/mac-address",
+      "destination": "/address/mac.html",
+      "permanent": true
+    },
+    {
+      "source": "/mac-address/:path*",
+      "destination": "/address/mac.html",
+      "permanent": true
+    },
+    {
+      "source": "/taxfree",
+      "destination": "/address/taxfree.html",
+      "permanent": true
+    },
+    {
+      "source": "/taxfree/:path*",
+      "destination": "/address/taxfree.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/usa-address",
+      "destination": "/address/usa.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/usa-address/:path*",
+      "destination": "/address/usa.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/cn-address",
+      "destination": "/address/cn.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/cn-address/:path*",
+      "destination": "/address/cn.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/hk-address",
+      "destination": "/address/hk.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/hk-address/:path*",
+      "destination": "/address/hk.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/uk-address",
+      "destination": "/address/uk.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/uk-address/:path*",
+      "destination": "/address/uk.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/ca-address",
+      "destination": "/address/ca.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/ca-address/:path*",
+      "destination": "/address/ca.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/jp-address",
+      "destination": "/address/jp.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/jp-address/:path*",
+      "destination": "/address/jp.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/tw-address",
+      "destination": "/address/tw.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/tw-address/:path*",
+      "destination": "/address/tw.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/de-address",
+      "destination": "/address/de.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/de-address/:path*",
+      "destination": "/address/de.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/sg-address",
+      "destination": "/address/sg.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/sg-address/:path*",
+      "destination": "/address/sg.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/mac-address",
+      "destination": "/address/mac.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/mac-address/:path*",
+      "destination": "/address/mac.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/taxfree",
+      "destination": "/address/taxfree.html",
+      "permanent": true
+    },
+    {
+      "source": "/address/taxfree/:path*",
+      "destination": "/address/taxfree.html",
+      "permanent": true
+    }
+  ]
+}

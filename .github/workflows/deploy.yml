@@ -3,10 +3,24 @@ name: Deploy to Cloudflare
 on:
   push:
     branches: [main]
-  workflow_dispatch: # 支持手动触发
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unit tests
+        run: node --test test/unit.mjs
+
   deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read

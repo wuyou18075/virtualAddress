@@ -1,129 +1,311 @@
 # VirtualAddress
 
-多国家/地区地址与测试数据生成工具，纯前端运行。
+多国家/地区地址与测试数据生成工具，**纯前端静态资源 + Cloudflare Worker**，无需构建步骤。
 
-## 功能
+> 仅供开发 / 测试。生成的身份与卡号为虚构或测试格式，不可用于欺诈或绕过任何真实业务核验。
 
-- **地址生成**：美国、香港、英国、加拿大、日本、印度、台湾、新加坡、德国等国家/地区地址
-- **免税州地址**：从演示数据中随机生成美国免税州地址
-- **身份信息**：姓名、出生日期等虚拟身份数据
-- **信用卡信息**：测试用信用卡号生成
-- **MAC 地址工具**：MAC 地址生成与解析
-- **数据可配置**：所有数据路径可自定义，支持本地 / CDN 等多种加载方式
+## 目录结构
 
-## 一键部署
+```
+├── index.html                 # 首页（IP / 中文地址转英文）
+├── address/                   # 各国入口（扁平 HTML）
+│   ├── usa.html
+│   ├── uk.html
+│   ├── cn.html
+│   ├── …                      # ca/jp/hk/tw/de/sg/taxfree/mac
+├── data/                      # JSON 数据
+│   ├── usData.json / ukData.json / …
+│   ├── us-real/{STATE}.json   # 美国真实地址分片
+│   ├── us-taxfree/{STATE}.json
+│   ├── jp-real/{都道府县}.json
+│   └── in-pin/{STATE}.json
+├── src/
+│   ├── css/main.css
+│   ├── js/                    # shell / generators / data-loader / …
+│   └── worker.js              # 旧路径 301 + 缓存/安全头
+├── test/unit.mjs              # Node 单测
+├── wrangler.toml              # CF Workers + Assets
+└── .github/workflows/deploy.yml
+```
 
-### Cloudflare Workers
+## 功能概览
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wuyou18075/virtualAddress)
+- 多国家/地区地址生成（US / UK / CA / JP / …）
+- 美国免税州演示地址
+- 身份与测试信用卡（Luhn 合法测试号）
+- MAC 生成与 OUI 解析
+- 首页 / 国内页：IP 附近住宅检索、中文转英文（OSM）
 
-点击上方按钮，登录 CF 后按提示确认即可完成部署。
+## 本地开发
 
-### GitHub Actions 自动部署
+```bash
+# 静态预览（推荐日常调试）
+npx --yes serve -l 5173 .
 
-推送 `main` 分支后自动部署到 CF Workers。
+# 或带 Worker 的本地预览（301 / 头与线上一致）
+npx wrangler dev
+```
 
-**首次配置**：在 GitHub 仓库 Settings → Secrets and variables → Actions 添加：
+访问示例：
 
-| Secret 名称 | 值 |
-|-------------|-----|
-| `CF_API_TOKEN` | 你的 Cloudflare API Token（权限：Workers + Pages 编辑） |
+| 页面 | URL |
+|------|-----|
+| 首页 | http://localhost:5173/ |
+| 美国 | http://localhost:5173/address/usa.html |
+| 英国 | http://localhost:5173/address/uk.html |
+| MAC | http://localhost:5173/address/mac.html |
 
-之后每次 `git push origin main` 都会自动部署。
+单测：
+
+```bash
+node --test test/unit.mjs
+```
+
+---
+
+## 部署方案（以当前仓库为准）
+
+### 默认方案：Cloudflare Workers + Assets
+
+与仓库根目录配置一致：
+
+```toml
+# wrangler.toml
+name = "virtualaddress"
+compatibility_date = "2026-07-14"
+main = "src/worker.js"
+assets = { directory = ".", not_found_handling = "auto" }
+```
+
+含义：
+
+- **静态文件**（`index.html`、`address/`、`data/`、`src/`）由 Workers **Assets** 托管，从项目根目录整站发布
+- **`src/worker.js`** 处理：旧 URL **301**、可选 `/api/*`、为 `/data` 与 `/src` 加缓存/安全头
+- **无构建命令**（不是 Vite/Webpack 产物站）
+
+#### 手动部署
+
+1. 安装并登录 Wrangler：`npx wrangler login`
+2. 在项目根目录：
+
+```bash
+npx wrangler deploy
+```
+
+3. 在 CF Dashboard → Workers 中绑定自定义域名（可选）
+
+#### GitHub Actions 自动部署（推荐）
+
+工作流：`.github/workflows/deploy.yml`
+
+- **PR / push**：先跑 `node --test test/unit.mjs`
+- **仅 `main` 分支 push**（非 PR）：测试通过后 `npx wrangler deploy`
+
+首次配置：仓库 **Settings → Secrets and variables → Actions** 添加：
+
+| Secret | 说明 |
+|--------|------|
+| `CF_API_TOKEN` | Cloudflare API Token，权限至少包含 Workers 编辑与账户资源读取（部署 Assets 所需） |
+
+之后：
+
+```bash
+git push origin main
+```
 
 [![Deploy status](https://github.com/wuyou18075/virtualAddress/actions/workflows/deploy.yml/badge.svg)](https://github.com/wuyou18075/virtualAddress/actions/workflows/deploy.yml)
 
-## 本地调试
+#### 一键部署徽章（可选）
 
-Win11 下，在项目根目录执行：
+| 平台 | 徽章 |
+|------|------|
+| Cloudflare Workers | [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wuyou18075/virtualAddress) |
+| Vercel | [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwuyou18075%2FvirtualAddress) |
+
+---
+
+#### Cloudflare「Deploy to Cloudflare」按钮说明与排障
+
+按钮链接格式（官方约定）：
+
+```text
+https://deploy.workers.cloudflare.com/?url=https://github.com/<owner>/<repo>
+```
+
+本仓库：
+
+```markdown
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wuyou18075/virtualAddress)
+```
+
+**按钮实际在做什么：** 打开 CF 控制台向导，把该 GitHub 仓库当作 **Worker 模板** 导入并部署（读取根目录 `wrangler.toml` + Assets）。它**不是**「在已登录的 Git 账号下自动勾选某一个 org/用户」的保证；Git 账号是否出现、是否默认选中，取决于你在 Cloudflare 侧是否已完成 GitHub 授权。
+
+**若 Git 账户没有自动选上，按下面排查：**
+
+1. **先绑定 GitHub（最重要）**  
+   登录 [Cloudflare Dashboard](https://dash.cloudflare.com/) → 右上角头像 → **My Profile** → **Authentication** / 或 Workers 导入流程中的 **Connect GitHub**。  
+   在 GitHub 打开 [Applications → Authorized OAuth Apps / Cloudflare](https://github.com/settings/installations)，确认 Cloudflare 已安装，并勾选能访问 `virtualAddress` 的账号或组织（Organization 需 Grant）。
+
+2. **多个 GitHub 账号 / 组织**  
+   浏览器若同时登录多个 GitHub，向导可能停在「选择账号」且不预填。处理：退出多余 GitHub 会话，或只用无痕窗口只登目标账号后再点徽章。
+
+3. **仓库权限不足**  
+   私有库或 org 库未给 Cloudflare GitHub App 授权时，列表为空或无法选中。到 GitHub → Settings → **Integrations → Cloudflare** → Repository access 选 All / Only select，包含本仓库。
+
+4. **更稳的替代（推荐自用仓库）**  
+   一键按钮适合「别人 fork/模板部署」。**维护自己的仓库**时更可靠的是：  
+   - Dashboard → **Workers & Pages** → **Create** → **Import a repository**（此时会强制走 Git 连接 UI，账号列表更清晰）；或  
+   - 配置 Actions + `CF_API_TOKEN` 后 `git push`（无需在按钮里选 Git）。
+
+5. **链接参数**  
+   保持 `url=` 为 **HTTPS 的 `github.com/owner/repo` 根地址**（不要带 `.git` 后缀、不要带 `/tree/main`）。当前写法已符合 [Deploy to Cloudflare buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/) 的常见用法。
+
+6. **部署成功后**  
+   确认 Worker 名称与 `wrangler.toml` 中 `name = "virtualaddress"` 一致或可在向导里改名；Assets 根目录为仓库根，无需填 Build command。
+
+#### Worker 提供的路由兼容
+
+| 旧路径 | 新路径 |
+|--------|--------|
+| `/usa-address/` | `/address/usa.html` |
+| `/address/usa-address/` | `/address/usa.html` |
+| （其它 `*-address` / `taxfree` 同理） | `/address/{slug}.html` |
+
+---
+
+### 备选 A：Vercel 一键 / Git 导入（静态站）
+
+适合不想碰 Cloudflare、只要全球 CDN 静态托管的场景。仓库已提供：
+
+- [`vercel.json`](./vercel.json) — 旧路径 **301**、`/data` 与 `/src` 缓存与安全头  
+- [`.vercelignore`](./.vercelignore) — 忽略测试、文档、`.git` 等，减小上传体积  
+
+> **注意：** Vercel **不会执行** `src/worker.js`。旧链兼容依赖 `vercel.json` 的 `redirects`，与 CF Worker 行为对齐的是「跳转 + 静态头」，不是完整 Worker 运行时。
+
+#### 方式 1：Deploy 徽章（Clone 模板）
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwuyou18075%2FvirtualAddress)
+
+或完整 URL：
+
+```text
+https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fwuyou18075%2FvirtualAddress
+```
+
+流程：登录 Vercel → 授权 GitHub → 创建项目（可 fork 到你的账号）→ Deploy。  
+静态站 **无 Build Command**；Framework Preset 选 **Other**。
+
+#### 方式 2：Import 已有仓库（推荐你自己的 fork）
+
+1. [vercel.com/new](https://vercel.com/new) → **Import Git Repository**  
+2. 选择 `virtualAddress`  
+3. 配置：
+
+| 项 | 值 |
+|----|-----|
+| Framework Preset | Other |
+| Root Directory | `.`（默认） |
+| Build Command | *留空* / 关闭 |
+| Output Directory | *留空*（发布仓库根目录静态文件） |
+| Install Command | *留空*（无 npm 依赖） |
+
+4. Deploy → 获得 `*.vercel.app` 域名  
+
+#### 方式 3：CLI
 
 ```bash
-npx --yes serve -l 5173 .
+npx vercel
+# 生产环境
+npx vercel --prod
 ```
 
-然后浏览器访问 `http://localhost:5173/`。
+#### Vercel 与 Cloudflare 怎么选
 
-## CF 部署方案
+| | Cloudflare Workers + Assets | Vercel |
+|--|-----------------------------|--------|
+| 一键入口 | Deploy to Cloudflare 按钮 | Deploy with Vercel 按钮 |
+| `src/worker.js` | ✅ 会跑（301/头） | ❌ 不跑（用 `vercel.json` 代替跳转） |
+| 持续部署 | GitHub Actions + Token 或 CF Git 集成 | Vercel Git 集成（绑仓库后自动） |
+| 配置文件 | `wrangler.toml` | `vercel.json` |
+| 适合 | 已用 CF / 要 Worker 扩展 | 只要静态、团队已在 Vercel |
 
-### 方案一：Cloudflare Pages（推荐）
+---
 
-1. 源码推送到 GitHub
-2. 登录 CF Dashboard → Workers & Pages → Pages → Connect to Git
-3. 选择仓库，构建配置如下：
+### 备选 B：Cloudflare Pages（仅静态）
 
-| 配置项 | 值 |
-|--------|-----|
+适合只想托管静态文件、**不需要** Worker 逻辑时：
+
+1. Dashboard → Workers & Pages → **Pages** → Connect to Git  
+2. 构建配置：
+
+| 项 | 值 |
+|----|-----|
 | Framework preset | None |
-| Build command | 留空 |
-| Build output directory | 留空 |
+| Build command | *留空* |
+| Build output directory | `/` 或 `.`（以 Dashboard 要求为准，本质为仓库根） |
 | Root directory | 留空 |
 
-4. 点击 **Save and Deploy**，CF 自动分配 `.pages.dev` 域名并开启 HTTPS
+3. 部署后使用 `.pages.dev` 或自定义域名  
 
-### 方案二：Cloudflare Workers
+**限制：**
 
-直接在 CF Dashboard 创建 Worker，将项目文件（`index.html`、`src/`、`data/` 等）打包或内联到 Worker 脚本中。
+- **不会执行** `src/worker.js`（无 Worker 侧逻辑）  
+- 旧路径 301 需另配 Pages `_redirects` / Redirects 规则，或改用本仓库的 **Workers + Assets** / **Vercel + vercel.json**
 
-```js
-// 将静态资源内联或通过 import 引入
-import indexHtml from "./index.html";
+---
 
-export default {
-  async fetch(req) {
-    const url = new URL(req.url);
+### 不推荐作为默认：纯 Worker 脚本内联 HTML
 
-    // 路由分发
-    if (url.pathname.startsWith("/src/") || url.pathname.startsWith("/data/")) {
-      // 静态资源由 CF 边缘缓存处理
-      return fetch(req);
-    }
+旧文档中「把整站 HTML import 进 Worker」的写法已过时。当前请使用 **Assets 目录托管**，避免体积与维护成本问题。
 
-    // 返回首页
-    return new Response(indexHtml, {
-      headers: { "content-type": "text/html;charset=utf-8" },
-    });
-  },
-};
-```
+### 可选进阶：Workers + KV
 
-**优势：**
-- 全球 300+ 边缘节点，延迟极低
-- 无需管理服务器，自动扩缩容
-- 免费计划每天 10 万请求，个人项目足够
-- 可结合 Worker Routes 实现自定义域名
+仅在「数据频繁改、不想每次 redeploy 静态资源」时考虑：
 
-### 方案三：Cloudflare Workers + KV
+1. 创建 KV 命名空间，在 `wrangler.toml` 绑定  
+2. 用脚本把 `data/**/*.json` 写入 KV  
+3. 在 `worker.js` 增加 `/data/*` 从 KV 读出并返回  
 
-将数据文件（`data/` 下的 JSON）存入 KV 命名空间，Worker 按需读取，适合数据量较大的场景。
+默认仓库**未启用** KV；静态 Assets 已足够个人/中小流量场景。
 
-```js
-import indexHtml from "./index.html";
+---
 
-// 绑定 KV 命名空间（在 CF Dashboard 绑定名为 DATA_BUCKET）
-// wrangler.toml 配置：
-// kv_namespaces = [{ binding = "DATA_BUCKET", id = "xxx" }]
+### 部署检查清单
 
-export default {
-  async fetch(req) {
-    const url = new URL(req.url);
+- [ ] `wrangler.toml` 中 `assets.directory = "."` 且 `main = "src/worker.js"`
+- [ ] Secret `CF_API_TOKEN` 已配置（用 Actions 时）
+- [ ] 本地 `node --test test/unit.mjs` 通过
+- [ ] 打开 `/address/usa.html`，Network 中可见按州分片如 `/data/us-real/CA.json`
+- [ ] 旧链接 `/usa-address/` 在 **Workers 部署** 下是否 301 到新路径
 
-    // 从 KV 获取数据
-    if (url.pathname === "/api/data") {
-      const data = await DATA_BUCKET.get("usData.json", "json");
-      return new Response(JSON.stringify(data), {
-        headers: { "content-type": "application/json" },
-      });
-    }
+---
 
-    return new Response(indexHtml, {
-      headers: { "content-type": "text/html;charset=utf-8" },
-    });
-  },
-};
-```
+## 代码结构（精简）
 
-**优势：**
-- 数据与代码分离，更新数据无需重新部署
-- KV 全球只读缓存，读取速度快
-- 数据文件可大于 Worker 的 1MB 脚本体积限制
-- 适合管理免税州 JSON、MAC OUI 等频繁更新的数据集
+| 路径 | 作用 |
+|------|------|
+| `src/js/shell.js` | 公共导航 |
+| `src/js/data-loader.js` | JSON 加载 / 缓存 / `loadRealRow` 分片 |
+| `src/js/generators/*.js` | 按国生成器（页面按需 import） |
+| `src/js/display-address.js` | 结果卡片 |
+| `src/js/share.js` / `selectors.js` | 分享、地区下拉 |
+| `src/js/geo-page.js` | 首页与国内页逻辑 |
+| `src/js/main.js` | 生成 / 保存 / 导出装配 |
+| `src/worker.js` | 301、缓存与安全头 |
+
+数据路径可用 `src/js/config.js` 的 `configure({ dataFiles, dataBasePath })` 覆盖。
+
+## 真实地址池分片
+
+| 逻辑池 | 目录 |
+|--------|------|
+| 美国真实地址 | `data/us-real/{STATE}.json` |
+| 免税州 | `data/us-taxfree/{STATE}.json` |
+| 日本 | `data/jp-real/{都道府县}.json` |
+| 印度 PIN | `data/in-pin/{STATE}.json` |
+
+运行时：`loadRealRow(dataFileId, regionCode)` 只拉当前地区。
+
+## License
+
+见 [LICENSE](./LICENSE)。

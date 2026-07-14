@@ -2,7 +2,7 @@ import {
   pickRandomTaxFreePreviewRow,
   addressFromTaxFreePreviewRow,
 } from './src/js/taxfree-preview-pack.js';
-import { generateUSAddress } from './src/js/address-generator.js';
+import { generateUSAddress } from './src/js/generators/us.js';
 import { copyToClipboard, showToast } from './src/js/utils.js';
 
 const STATE_NAMES = {
