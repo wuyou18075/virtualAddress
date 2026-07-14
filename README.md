@@ -19,7 +19,7 @@
 
 点击上方按钮，登录 CF 后按提示确认即可完成部署。
 
-### GitHub Actions（自动部署）
+### GitHub Actions 自动部署
 
 推送 `main` 分支后自动部署到 CF Workers。
 
@@ -108,4 +108,22 @@ export default {
     const url = new URL(req.url);
 
     // 从 KV 获取数据
-    
+    if (url.pathname === "/api/data") {
+      const data = await DATA_BUCKET.get("usData.json", "json");
+      return new Response(JSON.stringify(data), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return new Response(indexHtml, {
+      headers: { "content-type": "text/html;charset=utf-8" },
+    });
+  },
+};
+```
+
+**优势：**
+- 数据与代码分离，更新数据无需重新部署
+- KV 全球只读缓存，读取速度快
+- 数据文件可大于 Worker 的 1MB 脚本体积限制
+- 适合管理免税州 JSON、MAC OUI 等频繁更新的数据集

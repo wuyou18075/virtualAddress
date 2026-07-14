@@ -2,4 +2,4 @@ name = "virtualaddress"
 compatibility_date = "2026-07-14"
 main = "src/worker.js"
 
-asset
+assets = { directory = ".", not_found_handling = "auto" }
