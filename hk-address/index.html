@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-cn" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>香港地址生成器 - 本地版</title>
+  <script>
+    document.documentElement.classList.add("dark");
+    document.documentElement.style.backgroundColor = "#111827";
+  </script>
+  <link rel="stylesheet" href="../src/css/main.css">
+</head>
+<body>
+  <header>
+    <div class="header-container">
+      <a href="../" class="logo"><span>本地版</span></a>
+      <nav class="hidden md:flex">
+        <a href="../">首页</a>
+        <a href="../cn-address/">国内地址</a>
+        <a href="../hk-address/">香港</a>
+        <a href="../taxfree/">美国免税</a>
+        <a href="../usa-address/">美国</a>
+        <a href="../uk-address/">英国</a>
+        <a href="../ca-address/">加拿大</a>
+        <a href="../jp-address/">日本</a>
+        <a href="../tw-address/">台湾</a>
+        <a href="../de-address/">德国</a>
+        <a href="../sg-address/">新加坡</a>
+        <a href="../mac-address/">MAC 地址</a>
+      </nav>
+      <div class="header-actions">
+        <button id="mobile-menu-button" class="mobile-menu-btn" aria-expanded="false"><span>更多</span></button>
+      </div>
+    </div>
+    <div id="mobile-menu" class="mobile-menu">
+      <a href="../">首页</a>
+      <a href="../cn-address/">国内地址</a>
+      <a href="../hk-address/">香港</a>
+      <a href="../taxfree/">美国免税</a>
+      <a href="../usa-address/">美国</a>
+      <a href="../uk-address/">英国</a>
+      <a href="../ca-address/">加拿大</a>
+      <a href="../jp-address/">日本</a>
+      <a href="../tw-address/">台湾</a>
+      <a href="../de-address/">德国</a>
+      <a href="../sg-address/">新加坡</a>
+      <a href="../mac-address/">MAC 地址</a>
+    </div>
+  </header>
+  <main>
+    <section id="hero" class="hero">
+      <div class="container">
+        <div class="hero-card">
+          <div class="hero-header">
+            <div class="hero-content">
+              <div class="hero-text">
+                <h1>香港真实地址生成器<span class="gradient-text">（中英文切换）</span></h1>
+                <p>覆盖港岛 / 九龙 / 新界。支持中英文地址。邮编默认 000000。仅供开发测试。</p>
+              </div>
+              <div class="hero-controls">
+                <div class="state-select-wrapper">
+                  <label for="region-select">选择地区</label>
+                  <select id="region-select" class="state-select">
+                    <option value="RANDOM" selected>随机区域</option>
+                    <option value="HK">香港岛</option>
+                    <option value="KL">九龙</option>
+                    <option value="NT">新界</option>
+                  </select>
+                </div>
+                <div class="tool-option" style="margin-bottom:0.75rem;">
+                  <label for="hk-english-toggle" class="tool-label">生成香港英文地址</label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="hk-english-toggle">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div class="optional-tools">
+                  <div class="tool-option">
+                    <label for="generate-identity-toggle" class="tool-label">生成身份信息</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="generate-identity-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="tool-option">
+                    <label for="generate-card-toggle" class="tool-label">生成信用卡信息</label>
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="generate-card-toggle">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+                <button id="generate-address-btn" class="generate-btn">生成地址</button>
+              </div>
+            </div>
+          </div>
+          <div class="results-section">
+            <div class="results-header">
+              <h2>生成结果</h2>
+              <div class="results-actions">
+                <button id="share-current" class="btn btn-primary">分享</button>
+                <button id="copy-full-info" class="btn btn-primary">复制全部</button>
+                <button id="save-to-list-btn" class="btn btn-green">保存</button>
+              </div>
+            </div>
+            <div id="address-result" class="address-result empty">
+              <div class="text-center"><p>点击上方按钮生成香港地址。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="saved-section">
+          <div class="saved-header">
+            <h3>已保存的地址</h3>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <button id="clear-all-btn" class="btn btn-primary" style="background-color:#dc2626;color:white;">全部删除</button>
+              <div class="export-menu-wrapper">
+                <button id="export-menu-btn" class="btn btn-primary">导出</button>
+                <div id="export-menu" class="export-menu">
+                  <button id="export-csv-item">CSV</button>
+                  <button id="export-json-item">JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="saved-addresses" class="address-table">
+            <div class="empty-state"><p>暂无保存的地址</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div id="share-modal-overlay" class="modal-overlay"></div>
+  <div id="share-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header"><h3>分享</h3><button id="share-modal-close" class="modal-close">×</button></div>
+      <div class="modal-body">
+        <div><label for="share-preview">预览</label><textarea id="share-preview" readonly></textarea></div>
+        <div><label for="share-link">分享链接</label><div class="share-link-row"><input id="share-link" readonly><button id="copy-share-link" class="btn btn-primary">复制</button></div></div>
+        <div class="modal-footer"><button id="copy-share-text" class="btn">复制内容</button></div>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+    import { initPage, handleGenerateAddress, AddressGenerator, displaySavedAddresses } from "../src/js/main.js";
+    initPage({
+      generateHandler: async () => {
+        const regionSelect = document.getElementById("region-select");
+        const selectedRegion = regionSelect ? regionSelect.value : "RANDOM";
+        const generateEnglishHK = document.getElementById("hk-english-toggle")?.checked || false;
+        const generateIdentity = document.getElementById("generate-identity-toggle")?.checked || false;
+        const generateCreditCard = document.getElementById("generate-card-toggle")?.checked || false;
+        const generator = (region) => AddressGenerator.generateHKAddress(region, generateEnglishHK);
+        await handleGenerateAddress(generator, selectedRegion, generateIdentity, generateCreditCard);
+      },
+      showSavedAddresses: true,
+    });
+    setTimeout(() => displaySavedAddresses(), 100);
+  </script>
+</body>
+</html>
