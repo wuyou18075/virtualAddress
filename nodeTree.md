@@ -52,4 +52,8 @@ description: VirtualAddress 文件索引与职责
 - `wrangler.toml`：CF Workers + Assets 配置
 
 ## 测试与 CI
-- `package.json` / `package-lock.json`：固定 Wrangler 版本及 test/check/deploy 脚本，供本地与 Cloudflare Bui
+- `package.json` / `package-lock.json`：固定 Wrangler 版本及 test/check/deploy 脚本，供本地与 Cloudflare Builds 使用
+- `.assetsignore`：排除仓库元数据、测试、文档和部署配置，不作为公开静态资源上传
+- `.gitignore`：排除依赖、Wrangler 状态和本地密钥文件
+- `test/unit.mjs`：Node 单测（Node --test）
+- `.github/workflows/deploy.yml`：test → deploy（main 分支 push）

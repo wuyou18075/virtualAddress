@@ -18,4 +18,5 @@ package-lock.json
 vercel.json
 wrangler.toml
 
-# Worker entry is deployed as c
+# Worker entry is deployed as code, not as a public static asset
+src/worker.js
