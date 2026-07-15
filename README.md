@@ -24,6 +24,7 @@
 │   ├── js/                    # shell / generators / data-loader / …
 │   └── worker.js              # 旧路径 301 + 缓存/安全头
 ├── test/unit.mjs              # Node 单测
+├── deploy-vps.sh              # VPS 一键部署脚本
 ├── wrangler.toml              # CF Workers + Assets
 └── .github/workflows/deploy.yml
 ```
@@ -173,6 +174,52 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/<owner>/<repo>
 
 ---
 
+### 备选 C：VPS（Nginx + Let's Encrypt）
+
+适合自管服务器、不想依赖第三方平台。仓库提供一键脚本：
+
+#### 快速部署
+
+```bash
+# 1. SSH 登录 VPS
+ssh root@你的VPS_IP
+
+# 2. 安装 git（如果新机器没有）
+apt update && apt install -y git
+
+# 3. 克隆项目
+git clone https://github.com/wuyou18075/virtualAddress.git
+cd virtualAddress
+
+# 4. 运行脚本
+sudo bash deploy-vps.sh
+```
+
+按提示输入域名，脚本自动完成：
+
+| 步骤 | 内容 |
+|------|------|
+| 安装 Nginx | 检测并安装（apt/yum/dnf） |
+| 安装 Certbot | 检测并安装，自动申请 Let's Encrypt 证书 |
+| DNS 检查 | 检测域名是否已解析到本机 IP |
+| 部署静态文件 | rsync 到 `/var/www/virtualaddress` |
+| 生成 Nginx 配置 | 安全头、数据缓存、旧路径 301 兼容 |
+| HTTPS 跳转 | 自动配置 |
+| 证书续期 | 添加 cron（每天 3:00） |
+| 防火墙提示 | 检测 UFW 并提示放行 80/443 |
+
+#### 手动更新
+
+```bash
+cd /root/virtualAddress
+git pull
+sudo bash deploy-vps.sh
+```
+
+> **注意：** VPS 部署不运行 `src/worker.js`（Cloudflare Worker 逻辑），脚本内联的 Nginx 配置已实现等效的 301 跳转和安全头。
+
+---
+
 ### 备选 A：Vercel 一键 / Git 导入（静态站）
 
 适合不想碰 Cloudflare、只要全球 CDN 静态托管的场景。仓库已提供：
@@ -272,40 +319,4 @@ npx vercel --prod
 
 ### 部署检查清单
 
-- [ ] `wrangler.toml` 中 `assets.directory = "."` 且 `main = "src/worker.js"`
-- [ ] Secret `CF_API_TOKEN` 已配置（用 Actions 时）
-- [ ] 本地 `node --test test/unit.mjs` 通过
-- [ ] 打开 `/address/usa.html`，Network 中可见按州分片如 `/data/us-real/CA.json`
-- [ ] 旧链接 `/usa-address/` 在 **Workers 部署** 下是否 301 到新路径
-
----
-
-## 代码结构（精简）
-
-| 路径 | 作用 |
-|------|------|
-| `src/js/shell.js` | 公共导航 |
-| `src/js/data-loader.js` | JSON 加载 / 缓存 / `loadRealRow` 分片 |
-| `src/js/generators/*.js` | 按国生成器（页面按需 import） |
-| `src/js/display-address.js` | 结果卡片 |
-| `src/js/share.js` / `selectors.js` | 分享、地区下拉 |
-| `src/js/geo-page.js` | 首页与国内页逻辑 |
-| `src/js/main.js` | 生成 / 保存 / 导出装配 |
-| `src/worker.js` | 301、缓存与安全头 |
-
-数据路径可用 `src/js/config.js` 的 `configure({ dataFiles, dataBasePath })` 覆盖。
-
-## 真实地址池分片
-
-| 逻辑池 | 目录 |
-|--------|------|
-| 美国真实地址 | `data/us-real/{STATE}.json` |
-| 免税州 | `data/us-taxfree/{STATE}.json` |
-| 日本 | `data/jp-real/{都道府县}.json` |
-| 印度 PIN | `data/in-pin/{STATE}.json` |
-
-运行时：`loadRealRow(dataFileId, regionCode)` 只拉当前地区。
-
-## License
-
-见 [LICENSE](./LICENSE)。
+- [ ] `wrangler.toml` 中 `assets.directory = "."` 且 `main = "src/worker.
