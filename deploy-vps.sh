@@ -140,8 +140,26 @@ if [[ -n "$PUBLIC_IP" ]]; then
   fi
 fi
 
+# ── 4b. 部署标识与端口 __________________________________________________
+DEPLOY_NAME="virtualaddress"
+echo ""
+read -r -p "部署标识（用于区分多实例，默认: $DEPLOY_NAME）: " DEPLOY_NAME_INPUT
+DEPLOY_NAME="${DEPLOY_NAME_INPUT:-$DEPLOY_NAME}"
+# 以域名做标识更直观
+read -r -p "使用域名作为标识？(y/N): " USE_DOMAIN_AS_NAME
+if [[ "$USE_DOMAIN_AS_NAME" == "y" || "$USE_DOMAIN_AS_NAME" == "Y" ]]; then
+  DEPLOY_NAME="${DOMAIN//./-}"
+fi
+
+echo ""
+read -r -p "HTTP 端口 (默认 80): " HTTP_PORT
+HTTP_PORT="${HTTP_PORT:-80}"
+read -r -p "HTTPS 端口 (默认 443): " HTTPS_PORT
+HTTPS_PORT="${HTTPS_PORT:-443}"
+echo ""
+
 # ── 5. 部署静态文件 ──────────────────────────────────────────────────────
-WEB_ROOT="/var/www/virtualaddress"
+WEB_ROOT="/var/www/$DEPLOY_NAME"
 info "复制项目文件到 $WEB_ROOT …"
 mkdir -p "$WEB_ROOT"
 rsync -a --delete \
@@ -170,13 +188,20 @@ find "$WEB_ROOT" -type d -exec chmod 755 {} \;
 find "$WEB_ROOT" -type f -exec chmod 644 {} \;
 
 # ── 6. 生成 HTTP Nginx 配置 ──────────────────────────────────────────────
-NGINX_CONF="/etc/nginx/sites-available/virtualaddress"
+NGINX_CONF="/etc/nginx/sites-available/$DEPLOY_NAME"
 
-info "生成 Nginx 配置…"
+# 计算 HTTPS 跳转地址（非标端口显示端口号）
+if [[ "$HTTPS_PORT" == "443" ]]; then
+  HTTPS_REDIRECT="https://\$host\$request_uri"
+else
+  HTTPS_REDIRECT="https://\$host:$HTTPS_PORT\$request_uri"
+fi
+
+info "生成 Nginx 配置（HTTP $HTTP_PORT → HTTPS $HTTPS_PORT）…"
 
 cat > "$NGINX_CONF" <<NGINXEOF
 server {
-    listen 80;
+    listen $HTTP_PORT;
     server_name $DOMAIN;
     root $WEB_ROOT;
     index index.html;
@@ -208,8 +233,8 @@ server {
 NGINXEOF
 
 # 启用站点（兼容 sites-enabled 与 conf.d 两种布局）
-ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/virtualaddress 2>/dev/null || true
-ln -sf "$NGINX_CONF" /etc/nginx/conf.d/virtualaddress.conf 2>/dev/null || true
+ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/$DEPLOY_NAME" 2>/dev/null || true
+ln -sf "$NGINX_CONF" "/etc/nginx/conf.d/$DEPLOY_NAME.conf" 2>/dev/null || true
 # 删除默认站点（避免冲突）
 [[ -f /etc/nginx/sites-enabled/default ]] && rm -f /etc/nginx/sites-enabled/default
 
@@ -218,18 +243,24 @@ nginx -t || err "Nginx 配置测试失败，请检查 $NGINX_CONF"
 nginx_reload
 log "Nginx 配置已生效 (HTTP)"
 
-# ── 7. 检查外网 80 端口可达性 ──────────────────────────────────────────────
-info "检测外网 80 端口是否可达…"
+# ── 7. 检查外网端口可达性 ──────────────────────────────────────────────
 PORT80_OK=false
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://$DOMAIN/" 2>/dev/null || true)
-if [[ "$HTTP_CODE" =~ ^[23] ]]; then
-  log "外网 80 端口可达 (HTTP $HTTP_CODE)"
-  PORT80_OK=true
-elif [[ "$HTTP_CODE" == "000" ]]; then
-  warn "http://$DOMAIN/ 连接失败（外网 80 端口可能不通）"
+if [[ "$HTTP_PORT" == "80" ]]; then
+  info "检测外网 80 端口是否可达…"
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://$DOMAIN/" 2>/dev/null || true)
+  if [[ "$HTTP_CODE" =~ ^[23] ]]; then
+    log "外网 80 端口可达 (HTTP $HTTP_CODE)"
+    PORT80_OK=true
+  elif [[ "$HTTP_CODE" == "000" ]]; then
+    warn "http://$DOMAIN/ 连接失败（外网 80 端口可能不通）"
+  else
+    log "外网 80 端口检查结果: HTTP $HTTP_CODE"
+    PORT80_OK=true
+  fi
 else
-  log "外网 80 端口检查结果: HTTP $HTTP_CODE"
-  PORT80_OK=true
+  warn "HTTP 端口为 $HTTP_PORT（非 80），Let's Encrypt HTTP-01 验证无法使用"
+  warn "将使用 DNS 验证方式申请证书"
+  echo ""
 fi
 
 # ── 8. 申请 SSL 证书 ──────────────────────────────────────────────────────
@@ -324,7 +355,7 @@ EOF
       cat >> "$NGINX_CONF" <<HTTPSEOF
 
 server {
-    listen 443 ssl http2;
+    listen $HTTPS_PORT ssl http2;
     server_name $DOMAIN;
     root $WEB_ROOT;
     index index.html;
@@ -356,9 +387,9 @@ server {
 }
 
 server {
-    listen 80;
+    listen $HTTP_PORT;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
+    return 301 $HTTPS_REDIRECT;
 }
 HTTPSEOF
       nginx -t || err "Nginx 配置测试失败"
@@ -385,7 +416,7 @@ HTTPSEOF
       cat >> "$NGINX_CONF" <<HTTPSEOF
 
 server {
-    listen 443 ssl http2;
+    listen $HTTPS_PORT ssl http2;
     server_name $DOMAIN;
     root $WEB_ROOT;
     index index.html;
@@ -417,9 +448,9 @@ server {
 }
 
 server {
-    listen 80;
+    listen $HTTP_PORT;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
+    return 301 $HTTPS_REDIRECT;
 }
 HTTPSEOF
       nginx -t || err "Nginx 配置测试失败"
@@ -436,13 +467,13 @@ HTTPSEOF
 
       cat > "$NGINX_CONF" <<NGINXEOF
 server {
-    listen 80;
+    listen $HTTP_PORT;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
+    return 301 $HTTPS_REDIRECT;
 }
 
 server {
-    listen 443 ssl http2;
+    listen $HTTPS_PORT ssl http2;
     server_name $DOMAIN;
     root $WEB_ROOT;
     index index.html;
@@ -505,16 +536,33 @@ echo "=============================================="
 echo -e "  ${GREEN}部署完成！${NC}"
 echo "=============================================="
 echo ""
-echo "  HTTPS 访问: https://$DOMAIN"
-echo "  HTTP 访问:  http://$DOMAIN"
+if [[ "$HTTPS_PORT" == "443" ]]; then
+  echo "  HTTPS 访问: https://$DOMAIN"
+else
+  echo "  HTTPS 访问: https://$DOMAIN:$HTTPS_PORT"
+fi
+if [[ "$HTTP_PORT" == "80" ]]; then
+  echo "  HTTP 访问:  http://$DOMAIN"
+else
+  echo "  HTTP 访问:  http://$DOMAIN:$HTTP_PORT"
+fi
+echo "  部署标识:   $DEPLOY_NAME"
 echo "  静态文件:   $WEB_ROOT"
 echo "  Nginx 配置: $NGINX_CONF"
 echo ""
-echo "  页面示例:"
-echo "    https://$DOMAIN/                  (首页)"
-echo "    https://$DOMAIN/address/usa.html   (美国地址)"
-echo "    https://$DOMAIN/address/jp.html    (日本地址)"
-echo "    https://$DOMAIN/address/uk.html    (英国地址)"
+if [[ "$HTTPS_PORT" == "443" ]]; then
+  echo "  页面示例:"
+  echo "    https://$DOMAIN/                  (首页)"
+  echo "    https://$DOMAIN/address/usa.html   (美国地址)"
+  echo "    https://$DOMAIN/address/jp.html    (日本地址)"
+  echo "    https://$DOMAIN/address/uk.html    (英国地址)"
+else
+  echo "  页面示例:"
+  echo "    https://$DOMAIN:$HTTPS_PORT/                  (首页)"
+  echo "    https://$DOMAIN:$HTTPS_PORT/address/usa.html   (美国地址)"
+  echo "    https://$DOMAIN:$HTTPS_PORT/address/jp.html    (日本地址)"
+  echo "    https://$DOMAIN:$HTTPS_PORT/address/uk.html    (英国地址)"
+fi
 echo ""
 echo "  证书续期: 每天 3:00 cron（Let's Encrypt 自动）"
 echo "  更新项目: cd /path/to/virtualAddress && git pull && sudo bash deploy-vps.sh"
@@ -529,9 +577,27 @@ fi
 # 输出防火墙提示
 if command -v ufw &>/dev/null; then
   if ! ufw status | grep -q '80.*ALLOW'; then
-    warn "防火墙 (UFW) 可能未放行 80/443 端口："
-    echo "  sudo ufw allow 80/tcp"
-    echo "  sudo ufw allow 443/tcp"
-    echo "  （如果内网 NAS 端口映射到外网不是标准 80/443，需在路由器做转发）"
+    warn "防火墙 (UFW) 可能未放行 $HTTP_PORT/$HTTPS_PORT 端口："
+    echo "  sudo ufw allow $HTTP_PORT/tcp"
+    echo "  sudo ufw allow $HTTPS_PORT/tcp"
+  fi
+fi
+echo ""
+echo "  证书续期: 每天 3:00 cron（Let's Encrypt 自动）"
+echo "  更新项目: cd /path/to/virtualAddress && git pull && sudo bash deploy-vps.sh"
+echo ""
+
+if [[ "$PORT80_OK" != "true" && "${CERT_CHOICE:-1}" == "1" ]]; then
+  echo "  ⚠ 你的 VPS 外网 80 端口不通，已用 DNS-01 + Cloudflare API 完成证书"
+  echo "    如果之后打开 80 端口，重新运行脚本即可切回 HTTP-01"
+  echo ""
+fi
+
+# 输出防火墙提示
+if command -v ufw &>/dev/null; then
+  if ! ufw status | grep -q '80.*ALLOW'; then
+    warn "防火墙 (UFW) 可能未放行 $HTTP_PORT/$HTTPS_PORT 端口："
+    echo "  sudo ufw allow $HTTP_PORT/tcp"
+    echo "  sudo ufw allow $HTTPS_PORT/tcp"
   fi
 fi
