@@ -23,14 +23,48 @@ info() { echo -e "${CYAN}[i]${NC} $1"; }
 # ── 检测包管理器 ──────────────────────────────────────────────────────────
 if command -v apt &>/dev/null; then
   PKG="apt"; INSTALL="apt install -y"
+elif command -v apk &>/dev/null; then
+  PKG="apk"; INSTALL="apk add"
 elif command -v yum &>/dev/null; then
   PKG="yum"; INSTALL="yum install -y"
 elif command -v dnf &>/dev/null; then
   PKG="dnf"; INSTALL="dnf install -y"
 else
-  err "不支持的包管理器（仅支持 apt/yum/dnf）"
+  err "不支持的包管理器（仅支持 apt/apk/yum/dnf）"
 fi
 log "检测到包管理器: $PKG"
+
+# ── Nginx / 系统服务 容错封装（兼容 systemd / openrc / 容器） ───────────────
+nginx_reload() {
+  if command -v systemctl &>/dev/null; then
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+  elif command -v rc-service &>/dev/null; then
+    rc-service nginx reload 2>/dev/null || rc-service nginx restart 2>/dev/null || true
+  elif command -v service &>/dev/null; then
+    service nginx reload 2>/dev/null || service nginx restart 2>/dev/null || true
+  else
+    nginx -s reload 2>/dev/null || true
+  fi
+}
+
+nginx_enable_start() {
+  if command -v systemctl &>/dev/null; then
+    systemctl enable --now nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
+  elif command -v rc-service &>/dev/null; then
+    rc-update add nginx default 2>/dev/null || true
+    rc-service nginx start 2>/dev/null || true
+  elif command -v service &>/dev/null; then
+    service nginx start 2>/dev/null || true
+  else
+    nginx 2>/dev/null || true
+  fi
+}
+
+# ── 安装 rsync（可能没有） ────────────────────────────────────────────────
+if ! command -v rsync &>/dev/null; then
+  info "安装 rsync…"
+  $INSTALL rsync
+fi
 
 # ── 获取脚本所在目录（项目根） ────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -42,7 +76,7 @@ if command -v nginx &>/dev/null; then
 else
   warn "Nginx 未安装，正在安装…"
   $INSTALL nginx
-  systemctl enable --now nginx
+  nginx_enable_start
   log "Nginx 安装完成"
 fi
 
@@ -54,6 +88,7 @@ else
   warn "Certbot 未安装，正在安装…"
   case "$PKG" in
     apt) $INSTALL certbot python3-certbot-nginx ;;
+    apk) $INSTALL certbot certbot-nginx ;;
     yum|dnf) $INSTALL certbot python3-certbot-nginx ;;
   esac
   log "Certbot 安装完成"
@@ -71,7 +106,12 @@ echo ""
 # ── 4. 确认 DNS 已指向本机 ──────────────────────────────────────────────
 PUBLIC_IP="$(curl -4 -s ifconfig.me 2>/dev/null || curl -4 -s icanhazip.com 2>/dev/null || echo '')"
 if [[ -n "$PUBLIC_IP" ]]; then
-  DOMAIN_IP="$(dig +short "$DOMAIN" 2>/dev/null | head -1 || host "$DOMAIN" 2>/dev/null | grep -oP '(\d+\.){3}\d+' | head -1 || echo '')"
+  set +e
+  DOMAIN_IP="$(dig +short "$DOMAIN" 2>/dev/null | head -1)"
+  if [[ -z "$DOMAIN_IP" ]]; then
+    DOMAIN_IP="$(getent hosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | head -1)"
+  fi
+  set -e
   if [[ -n "$DOMAIN_IP" ]]; then
     if [[ "$DOMAIN_IP" != "$PUBLIC_IP" ]]; then
       warn "域名 $DOMAIN 解析到 $DOMAIN_IP，但本机公网 IP 是 $PUBLIC_IP"
@@ -153,14 +193,15 @@ server {
 }
 NGINXEOF
 
-# 启用站点
-ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/virtualaddress
+# 启用站点（兼容 sites-enabled 与 conf.d 两种布局）
+ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/virtualaddress 2>/dev/null || true
+ln -sf "$NGINX_CONF" /etc/nginx/conf.d/virtualaddress.conf 2>/dev/null || true
 # 删除默认站点（避免冲突）
 [[ -f /etc/nginx/sites-enabled/default ]] && rm -f /etc/nginx/sites-enabled/default
 
 # 测试配置
 nginx -t || err "Nginx 配置测试失败，请检查 $NGINX_CONF"
-systemctl reload nginx
+nginx_reload
 log "Nginx 配置已生效 (HTTP)"
 
 # ── 7. 检查外网 80 端口可达性 ──────────────────────────────────────────────
@@ -193,7 +234,7 @@ if [[ "$PORT80_OK" == "true" ]]; then
     warn "自动申请失败，尝试交互模式…"
     certbot --nginx -d "$DOMAIN" --redirect
   }
-  CRON_HOOK="systemctl reload nginx"
+  CRON_HOOK="nginx_reload"
 else
   # ── 8b. 端口 80 不通 → DNS-01 验证 ──────────────────────────────────
   warn "外网 80 端口不通，Let's Encrypt HTTP-01 验证无法使用"
@@ -213,6 +254,7 @@ else
       info "安装 certbot-dns-cloudflare 插件…"
       case "$PKG" in
         apt) $INSTALL python3-certbot-dns-cloudflare ;;
+        apk) $INSTALL certbot-dns-cloudflare ;;
         yum|dnf) $INSTALL python3-certbot-dns-cloudflare ;;
       esac
 
@@ -288,8 +330,8 @@ server {
 }
 HTTPSEOF
       nginx -t || err "Nginx 配置测试失败"
-      systemctl reload nginx
-      CRON_HOOK="systemctl reload nginx"
+      nginx_reload
+      CRON_HOOK="nginx_reload"
       ;;
     2)
       echo ""
@@ -343,8 +385,8 @@ server {
 }
 HTTPSEOF
       nginx -t || err "Nginx 配置测试失败"
-      systemctl reload nginx
-      CRON_HOOK="systemctl reload nginx"
+      nginx_reload
+      CRON_HOOK="nginx_reload"
       ;;
     3)
       warn "生成自签名证书（仅内网/测试用）"
@@ -393,7 +435,7 @@ server {
 }
 NGINXEOF
       nginx -t || err "Nginx 配置测试失败"
-      systemctl reload nginx
+      nginx_reload
       CRON_HOOK=""
       warn "自签名证书不会自动续期，有效期 365 天"
       ;;
@@ -408,7 +450,9 @@ log "SSL 证书处理完成"
 
 # ── 9. 设置证书自动续期（仅 Let's Encrypt） ──────────────────────────────
 if [[ -n "${CRON_HOOK:-}" ]]; then
-  CRON_JOB="0 3 * * * /usr/bin/certbot renew --quiet --post-hook '$CRON_HOOK'"
+  # 续期 hook 在独立 cron 环境里重新 source 本脚本不方便，直接写健壮的重载命令
+  RENEW_HOOK='(command -v systemctl >/dev/null && systemctl reload nginx) || (command -v rc-service >/dev/null && rc-service nginx reload) || (command -v service >/dev/null && service nginx reload) || nginx -s reload || true'
+  CRON_JOB="0 3 * * * /usr/bin/certbot renew --quiet --post-hook '$RENEW_HOOK'"
   if crontab -l 2>/dev/null | grep -q 'certbot renew'; then
     log "Certbot 续期 cron 已存在"
   else
@@ -417,39 +461,4 @@ if [[ -n "${CRON_HOOK:-}" ]]; then
   fi
 fi
 
-# ── 10. 完成 ─────────────────────────────────────────────────────────────
-echo ""
-echo "=============================================="
-echo -e "  ${GREEN}部署完成！${NC}"
-echo "=============================================="
-echo ""
-echo "  HTTPS 访问: https://$DOMAIN"
-echo "  HTTP 访问:  http://$DOMAIN"
-echo "  静态文件:   $WEB_ROOT"
-echo "  Nginx 配置: $NGINX_CONF"
-echo ""
-echo "  页面示例:"
-echo "    https://$DOMAIN/                  (首页)"
-echo "    https://$DOMAIN/address/usa.html   (美国地址)"
-echo "    https://$DOMAIN/address/jp.html    (日本地址)"
-echo "    https://$DOMAIN/address/uk.html    (英国地址)"
-echo ""
-echo "  证书续期: 每天 3:00 cron（Let's Encrypt 自动）"
-echo "  更新项目: cd $(dirname "$0") && git pull && sudo bash $(basename "$0")"
-echo ""
-
-if [[ "$PORT80_OK" != "true" && "${CERT_CHOICE:-1}" == "1" ]]; then
-  echo "  ⚠ 你的 VPS 外网 80 端口不通，已用 DNS-01 + Cloudflare API 完成证书"
-  echo "    如果之后打开 80 端口，重新运行脚本即可切回 HTTP-01"
-  echo ""
-fi
-
-# 输出防火墙提示
-if command -v ufw &>/dev/null; then
-  if ! ufw status | grep -q '80.*ALLOW'; then
-    warn "防火墙 (UFW) 可能未放行 80/443 端口："
-    echo "  sudo ufw allow 80/tcp"
-    echo "  sudo ufw allow 443/tcp"
-    echo "  （如果内网 NAS 端口映射到外网不是标准 80/443，需在路由器做转发）"
-  fi
-fi
+# ── 10. 完成 ─────────────────
