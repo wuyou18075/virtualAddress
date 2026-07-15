@@ -46,7 +46,7 @@ else
   log "Nginx 安装完成"
 fi
 
-# ── 2. 安装 Certbot ──────────────────────────────────────────────────────
+# ── 2. 安装 Certbot（HTTP-01 用） ─────────────────────────────────────────
 info "检查 Certbot…"
 if command -v certbot &>/dev/null; then
   log "Certbot 已安装"
@@ -115,9 +115,8 @@ chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || chown -R nginx:nginx "$WEB
 find "$WEB_ROOT" -type d -exec chmod 755 {} \;
 find "$WEB_ROOT" -type f -exec chmod 644 {} \;
 
-# ── 6. 生成 Nginx 配置 ──────────────────────────────────────────────────
+# ── 6. 生成 HTTP Nginx 配置 ──────────────────────────────────────────────
 NGINX_CONF="/etc/nginx/sites-available/virtualaddress"
-NGINX_ENABLED="/etc/nginx/sites-enabled/virtualaddress"
 
 info "生成 Nginx 配置…"
 
@@ -148,11 +147,6 @@ server {
         return 301 /address/taxfree.html;
     }
 
-    # 地址页 301 兼容
-    location ~ ^/address/(usa-address|cn-address|hk-address|uk-address|ca-address|jp-address|tw-address|de-address|sg-address|mac-address)(/.*)?$ {
-        return 301 /address/\$1.html;
-    }
-
     location / {
         try_files \$uri \$uri/ =404;
     }
@@ -160,7 +154,7 @@ server {
 NGINXEOF
 
 # 启用站点
-ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
+ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/virtualaddress
 # 删除默认站点（避免冲突）
 [[ -f /etc/nginx/sites-enabled/default ]] && rm -f /etc/nginx/sites-enabled/default
 
@@ -169,39 +163,268 @@ nginx -t || err "Nginx 配置测试失败，请检查 $NGINX_CONF"
 systemctl reload nginx
 log "Nginx 配置已生效 (HTTP)"
 
-# ── 7. 申请 SSL 证书 ────────────────────────────────────────────────────
-info "通过 Let's Encrypt 申请 SSL 证书…"
-echo ""
-echo "=============================================="
-echo "  将自动申请证书：$DOMAIN"
-echo "  请确保域名已正确解析到本机"
-echo "=============================================="
-echo ""
-
-# 自动申请证书，同时修改 Nginx 配置以启用 HTTPS
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect 2>&1 || {
-  warn "自动申请失败，尝试交互模式…"
-  certbot --nginx -d "$DOMAIN" --redirect
-}
-
-log "SSL 证书已申请完成"
-
-# ── 8. 设置证书自动续期 ──────────────────────────────────────────────────
-CRON_JOB="0 3 * * * /usr/bin/certbot renew --quiet --post-hook 'systemctl reload nginx'"
-if crontab -l 2>/dev/null | grep -q 'certbot renew'; then
-  log "Certbot 续期 cron 已存在"
+# ── 7. 检查外网 80 端口可达性 ──────────────────────────────────────────────
+info "检测外网 80 端口是否可达…"
+PORT80_OK=false
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://$DOMAIN/" 2>/dev/null || true)
+if [[ "$HTTP_CODE" =~ ^[23] ]]; then
+  log "外网 80 端口可达 (HTTP $HTTP_CODE)"
+  PORT80_OK=true
+elif [[ "$HTTP_CODE" == "000" ]]; then
+  warn "http://$DOMAIN/ 连接失败（外网 80 端口可能不通）"
 else
-  (crontab -l 2>/dev/null || true; echo "$CRON_JOB") | crontab -
-  log "已添加 certbot 自动续期 cron (每天 3:00)"
+  log "外网 80 端口检查结果: HTTP $HTTP_CODE"
+  PORT80_OK=true
 fi
 
-# ── 9. 完成 ──────────────────────────────────────────────────────────────
+# ── 8. 申请 SSL 证书 ──────────────────────────────────────────────────────
+echo ""
+echo "=============================================="
+echo "  SSL 证书申请：$DOMAIN"
+echo "=============================================="
+echo ""
+
+CRON_HOOK=""
+
+if [[ "$PORT80_OK" == "true" ]]; then
+  # ── 8a. HTTP-01 验证（标准端口 80 可达） ──────────────────────────────
+  info "使用 HTTP-01 验证（端口 80 通）"
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect 2>&1 || {
+    warn "自动申请失败，尝试交互模式…"
+    certbot --nginx -d "$DOMAIN" --redirect
+  }
+  CRON_HOOK="systemctl reload nginx"
+else
+  # ── 8b. 端口 80 不通 → DNS-01 验证 ──────────────────────────────────
+  warn "外网 80 端口不通，Let's Encrypt HTTP-01 验证无法使用"
+  echo ""
+  echo " 请选择证书方案："
+  echo ""
+  echo "  1) Cloudflare DNS API — 通过 DNS TXT 记录验证（推荐，需 CF API Token）"
+  echo "  2) 手动 DNS 验证 — certbot 给出 TXT 值，你手动去 DNS 加记录"
+  echo "  3) 自签名证书 — 仅用于测试/内网，浏览器会显示不安全"
+  echo "  4) 跳过证书 — 只配 HTTP"
+  echo ""
+  read -r -p "请选择 [1/2/3/4] (默认 1): " CERT_CHOICE
+  CERT_CHOICE="${CERT_CHOICE:-1}"
+
+  case "$CERT_CHOICE" in
+    1)
+      info "安装 certbot-dns-cloudflare 插件…"
+      case "$PKG" in
+        apt) $INSTALL python3-certbot-dns-cloudflare ;;
+        yum|dnf) $INSTALL python3-certbot-dns-cloudflare ;;
+      esac
+
+      echo ""
+      warn "请准备一个 Cloudflare API Token（域名需在 CF 上管理）"
+      echo "  创建地址: https://dash.cloudflare.com/profile/api-tokens"
+      echo "  权限: Zone:DNS:Edit"
+      echo "  资源: 包含域名 $DOMAIN"
+      echo ""
+
+      CF_CRED_DIR="/etc/letsencrypt"
+      CF_CRED_FILE="$CF_CRED_DIR/cloudflare.ini"
+      mkdir -p "$CF_CRED_DIR"
+
+      read -r -p "输入 Cloudflare API Token: " CF_TOKEN
+      while [[ -z "$CF_TOKEN" ]]; do
+        warn "Token 不能为空"
+        read -r -p "输入 Cloudflare API Token: " CF_TOKEN
+      done
+
+      cat > "$CF_CRED_FILE" <<EOF
+dns_cloudflare_api_token = $CF_TOKEN
+EOF
+      chmod 600 "$CF_CRED_FILE"
+
+      certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$CF_CRED_FILE" \
+        -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" 2>&1 || {
+        warn "DNS-01 自动申请失败，尝试交互模式…"
+        certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$CF_CRED_FILE" \
+          -d "$DOMAIN" --agree-tos --email "admin@$DOMAIN"
+      }
+
+      # 生成 HTTPS Nginx 配置
+      info "生成 HTTPS Nginx 配置…"
+      cat >> "$NGINX_CONF" <<HTTPSEOF
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+    root $WEB_ROOT;
+    index index.html;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    location ~ ^/(data|src)/ {
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location ~ ^/(usa-address|cn-address|hk-address|uk-address|ca-address|jp-address|tw-address|de-address|sg-address|mac-address)(/.*)?$ {
+        return 301 /address/\$1.html;
+    }
+    location ~ ^/taxfree(/.*)?$ {
+        return 301 /address/taxfree.html;
+    }
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+HTTPSEOF
+      nginx -t || err "Nginx 配置测试失败"
+      systemctl reload nginx
+      CRON_HOOK="systemctl reload nginx"
+      ;;
+    2)
+      echo ""
+      warn "手动 DNS 验证模式"
+      echo "  certbot 会生成一段 TXT 记录值，你需要去 DNS 管理面板加记录"
+      echo "  添加后再回终端按回车继续"
+      echo ""
+      read -r -p "按回车开始手动验证…"
+
+      certbot certonly --manual --preferred-challenges dns \
+        -d "$DOMAIN" --agree-tos --email "admin@$DOMAIN"
+
+      cat >> "$NGINX_CONF" <<HTTPSEOF
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+    root $WEB_ROOT;
+    index index.html;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    location ~ ^/(data|src)/ {
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location ~ ^/(usa-address|cn-address|hk-address|uk-address|ca-address|jp-address|tw-address|de-address|sg-address|mac-address)(/.*)?$ {
+        return 301 /address/\$1.html;
+    }
+    location ~ ^/taxfree(/.*)?$ {
+        return 301 /address/taxfree.html;
+    }
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+HTTPSEOF
+      nginx -t || err "Nginx 配置测试失败"
+      systemctl reload nginx
+      CRON_HOOK="systemctl reload nginx"
+      ;;
+    3)
+      warn "生成自签名证书（仅内网/测试用）"
+      mkdir -p /etc/nginx/ssl
+      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /etc/nginx/ssl/virtualaddress.key \
+        -out /etc/nginx/ssl/virtualaddress.crt \
+        -subj "/CN=$DOMAIN"
+
+      cat > "$NGINX_CONF" <<NGINXEOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+    root $WEB_ROOT;
+    index index.html;
+
+    ssl_certificate /etc/nginx/ssl/virtualaddress.crt;
+    ssl_certificate_key /etc/nginx/ssl/virtualaddress.key;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    location ~ ^/(data|src)/ {
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location ~ ^/(usa-address|cn-address|hk-address|uk-address|ca-address|jp-address|tw-address|de-address|sg-address|mac-address)(/.*)?$ {
+        return 301 /address/\$1.html;
+    }
+    location ~ ^/taxfree(/.*)?$ {
+        return 301 /address/taxfree.html;
+    }
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+NGINXEOF
+      nginx -t || err "Nginx 配置测试失败"
+      systemctl reload nginx
+      CRON_HOOK=""
+      warn "自签名证书不会自动续期，有效期 365 天"
+      ;;
+    4|*)
+      warn "跳过证书，仅 HTTP"
+      CRON_HOOK=""
+      ;;
+  esac
+fi
+
+log "SSL 证书处理完成"
+
+# ── 9. 设置证书自动续期（仅 Let's Encrypt） ──────────────────────────────
+if [[ -n "${CRON_HOOK:-}" ]]; then
+  CRON_JOB="0 3 * * * /usr/bin/certbot renew --quiet --post-hook '$CRON_HOOK'"
+  if crontab -l 2>/dev/null | grep -q 'certbot renew'; then
+    log "Certbot 续期 cron 已存在"
+  else
+    (crontab -l 2>/dev/null || true; echo "$CRON_JOB") | crontab -
+    log "已添加 certbot 自动续期 cron (每天 3:00)"
+  fi
+fi
+
+# ── 10. 完成 ─────────────────────────────────────────────────────────────
 echo ""
 echo "=============================================="
 echo -e "  ${GREEN}部署完成！${NC}"
 echo "=============================================="
 echo ""
 echo "  HTTPS 访问: https://$DOMAIN"
+echo "  HTTP 访问:  http://$DOMAIN"
 echo "  静态文件:   $WEB_ROOT"
 echo "  Nginx 配置: $NGINX_CONF"
 echo ""
@@ -211,9 +434,15 @@ echo "    https://$DOMAIN/address/usa.html   (美国地址)"
 echo "    https://$DOMAIN/address/jp.html    (日本地址)"
 echo "    https://$DOMAIN/address/uk.html    (英国地址)"
 echo ""
-echo "  证书续期: 自动 (每天 3:00 cron)"
-echo "  更新项目: rsync -a --delete /path/to/virtualAddress/ $WEB_ROOT/"
+echo "  证书续期: 每天 3:00 cron（Let's Encrypt 自动）"
+echo "  更新项目: cd $(dirname "$0") && git pull && sudo bash $(basename "$0")"
 echo ""
+
+if [[ "$PORT80_OK" != "true" && "${CERT_CHOICE:-1}" == "1" ]]; then
+  echo "  ⚠ 你的 VPS 外网 80 端口不通，已用 DNS-01 + Cloudflare API 完成证书"
+  echo "    如果之后打开 80 端口，重新运行脚本即可切回 HTTP-01"
+  echo ""
+fi
 
 # 输出防火墙提示
 if command -v ufw &>/dev/null; then
@@ -221,5 +450,6 @@ if command -v ufw &>/dev/null; then
     warn "防火墙 (UFW) 可能未放行 80/443 端口："
     echo "  sudo ufw allow 80/tcp"
     echo "  sudo ufw allow 443/tcp"
+    echo "  （如果内网 NAS 端口映射到外网不是标准 80/443，需在路由器做转发）"
   fi
 fi
