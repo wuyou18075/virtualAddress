@@ -22,17 +22,25 @@ info() { echo -e "${CYAN}[i]${NC} $1"; }
 
 # ── 检测包管理器 ──────────────────────────────────────────────────────────
 if command -v apt &>/dev/null; then
-  PKG="apt"; INSTALL="apt install -y"
+  PKG="apt"; INSTALL="apt-get install -y"
+  PKG_UPDATE="apt-get update -qq"
 elif command -v apk &>/dev/null; then
   PKG="apk"; INSTALL="apk add"
+  PKG_UPDATE="apk update"
 elif command -v yum &>/dev/null; then
   PKG="yum"; INSTALL="yum install -y"
+  PKG_UPDATE="yum makecache -q"
 elif command -v dnf &>/dev/null; then
   PKG="dnf"; INSTALL="dnf install -y"
+  PKG_UPDATE="dnf makecache -q"
 else
   err "不支持的包管理器（仅支持 apt/apk/yum/dnf）"
 fi
 log "检测到包管理器: $PKG"
+
+# ── 更新包索引（Debian 13 全新系统必须） ───────────────────────────────────
+info "更新包索引…"
+$PKG_UPDATE 2>&1 | tail -1 || warn "包索引更新失败，尝试继续…"
 
 # ── Nginx / 系统服务 容错封装（兼容 systemd / openrc / 容器） ───────────────
 nginx_reload() {
@@ -78,6 +86,12 @@ else
   $INSTALL nginx
   nginx_enable_start
   log "Nginx 安装完成"
+fi
+
+# 确保 nginx 在运行（certbot 需要后端服务）
+if ! pgrep -x nginx &>/dev/null; then
+  warn "Nginx 未运行，尝试启动…"
+  nginx_enable_start
 fi
 
 # ── 2. 安装 Certbot（HTTP-01 用） ─────────────────────────────────────────
@@ -230,10 +244,19 @@ CRON_HOOK=""
 if [[ "$PORT80_OK" == "true" ]]; then
   # ── 8a. HTTP-01 验证（标准端口 80 可达） ──────────────────────────────
   info "使用 HTTP-01 验证（端口 80 通）"
-  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect 2>&1 || {
-    warn "自动申请失败，尝试交互模式…"
-    certbot --nginx -d "$DOMAIN" --redirect
-  }
+  set +e
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect 2>&1
+  CERT_EXIT=$?
+  set -e
+  if [[ $CERT_EXIT -ne 0 ]]; then
+    warn "certbot 自动申请失败（退出码 $CERT_EXIT），常见原因："
+    warn "  - 域名解析未生效 / DNS 未指向本机"
+    warn "  - Nginx 未运行或端口 80 被占用"
+    warn "  - 已存在同名证书"
+    echo ""
+    info "切换到交互模式重试（会提示你更多信息）…"
+    certbot --nginx -d "$DOMAIN" --redirect || true
+  fi
   CRON_HOOK="nginx_reload"
 else
   # ── 8b. 端口 80 不通 → DNS-01 验证 ──────────────────────────────────
@@ -280,12 +303,21 @@ dns_cloudflare_api_token = $CF_TOKEN
 EOF
       chmod 600 "$CF_CRED_FILE"
 
+      set +e
       certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$CF_CRED_FILE" \
-        -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" 2>&1 || {
-        warn "DNS-01 自动申请失败，尝试交互模式…"
+        -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" 2>&1
+      CERT_EXIT=$?
+      set -e
+      if [[ $CERT_EXIT -ne 0 ]]; then
+        warn "DNS-01 自动申请失败（退出码 $CERT_EXIT），常见原因："
+        warn "  - Cloudflare API Token 权限不够（需要 Zone:DNS:Edit）"
+        warn "  - 域名 $DOMAIN 不在 Cloudflare DNS 管理下"
+        warn "  - certbot-dns-cloudflare 插件版本不匹配"
+        echo ""
+        info "切换到交互模式重试…"
         certbot certonly --dns-cloudflare --dns-cloudflare-credentials "$CF_CRED_FILE" \
-          -d "$DOMAIN" --agree-tos --email "admin@$DOMAIN"
-      }
+          -d "$DOMAIN" --agree-tos --email "admin@$DOMAIN" || true
+      fi
 
       # 生成 HTTPS Nginx 配置
       info "生成 HTTPS Nginx 配置…"
@@ -341,8 +373,14 @@ HTTPSEOF
       echo ""
       read -r -p "按回车开始手动验证…"
 
+      set +e
       certbot certonly --manual --preferred-challenges dns \
         -d "$DOMAIN" --agree-tos --email "admin@$DOMAIN"
+      CERT_EXIT=$?
+      set -e
+      if [[ $CERT_EXIT -ne 0 ]]; then
+        warn "手动 DNS 验证失败（退出码 $CERT_EXIT），请检查 DNS TXT 记录是否正确添加"
+      fi
 
       cat >> "$NGINX_CONF" <<HTTPSEOF
 
@@ -461,4 +499,39 @@ if [[ -n "${CRON_HOOK:-}" ]]; then
   fi
 fi
 
-# ── 10. 完成 ─────────────────
+# ── 10. 完成 ─────────────────────────────────────────────────────────────
+echo ""
+echo "=============================================="
+echo -e "  ${GREEN}部署完成！${NC}"
+echo "=============================================="
+echo ""
+echo "  HTTPS 访问: https://$DOMAIN"
+echo "  HTTP 访问:  http://$DOMAIN"
+echo "  静态文件:   $WEB_ROOT"
+echo "  Nginx 配置: $NGINX_CONF"
+echo ""
+echo "  页面示例:"
+echo "    https://$DOMAIN/                  (首页)"
+echo "    https://$DOMAIN/address/usa.html   (美国地址)"
+echo "    https://$DOMAIN/address/jp.html    (日本地址)"
+echo "    https://$DOMAIN/address/uk.html    (英国地址)"
+echo ""
+echo "  证书续期: 每天 3:00 cron（Let's Encrypt 自动）"
+echo "  更新项目: cd /path/to/virtualAddress && git pull && sudo bash deploy-vps.sh"
+echo ""
+
+if [[ "$PORT80_OK" != "true" && "${CERT_CHOICE:-1}" == "1" ]]; then
+  echo "  ⚠ 你的 VPS 外网 80 端口不通，已用 DNS-01 + Cloudflare API 完成证书"
+  echo "    如果之后打开 80 端口，重新运行脚本即可切回 HTTP-01"
+  echo ""
+fi
+
+# 输出防火墙提示
+if command -v ufw &>/dev/null; then
+  if ! ufw status | grep -q '80.*ALLOW'; then
+    warn "防火墙 (UFW) 可能未放行 80/443 端口："
+    echo "  sudo ufw allow 80/tcp"
+    echo "  sudo ufw allow 443/tcp"
+    echo "  （如果内网 NAS 端口映射到外网不是标准 80/443，需在路由器做转发）"
+  fi
+fi
