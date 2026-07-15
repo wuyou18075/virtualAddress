@@ -5,6 +5,11 @@ description: VirtualAddress 变更记录
 
 # VirtualAddress 变更记录
 
+## 2026-07-15 — VPS 一键部署脚本
+- 新增 `deploy-vps.sh`：自动检测/安装 Nginx、输入域名、Let's Encrypt 自动证书申请
+- 内联 Nginx 配置（301 旧路径兼容 + 安全头 + 缓存策略）
+- 磁贴续期 cron、DNS 解析检测、rsync 仅部署静态资源
+
 ## 2026-07-15 — Cloudflare Dashboard 部署识别标准化
 - 新增 `package.json` / `package-lock.json`，固定 Wrangler 4.110.0
 - 增加 test、check、deploy、deploy:dry-run 标准脚本
