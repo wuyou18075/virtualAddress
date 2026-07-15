@@ -319,4 +319,40 @@ npx vercel --prod
 
 ### 部署检查清单
 
-- [ ] `wrangler.toml` 中 `assets.directory = "."` 且 `main = "src/worker.
+- [ ] `wrangler.toml` 中 `assets.directory = "."` 且 `main = "src/worker.js"`
+- [ ] Secret `CF_API_TOKEN` 已配置（用 Actions 时）
+- [ ] 本地 `node --test test/unit.mjs` 通过
+- [ ] 打开 `/address/usa.html`，Network 中可见按州分片如 `/data/us-real/CA.json`
+- [ ] 旧链接 `/usa-address/` 在 **Workers 部署** 下是否 301 到新路径
+
+---
+
+## 代码结构（精简）
+
+| 路径 | 作用 |
+|------|------|
+| `src/js/shell.js` | 公共导航 |
+| `src/js/data-loader.js` | JSON 加载 / 缓存 / `loadRealRow` 分片 |
+| `src/js/generators/*.js` | 按国生成器（页面按需 import） |
+| `src/js/display-address.js` | 结果卡片 |
+| `src/js/share.js` / `selectors.js` | 分享、地区下拉 |
+| `src/js/geo-page.js` | 首页与国内页逻辑 |
+| `src/js/main.js` | 生成 / 保存 / 导出装配 |
+| `src/worker.js` | 301、缓存与安全头 |
+
+数据路径可用 `src/js/config.js` 的 `configure({ dataFiles, dataBasePath })` 覆盖。
+
+## 真实地址池分片
+
+| 逻辑池 | 目录 |
+|--------|------|
+| 美国真实地址 | `data/us-real/{STATE}.json` |
+| 免税州 | `data/us-taxfree/{STATE}.json` |
+| 日本 | `data/jp-real/{都道府县}.json` |
+| 印度 PIN | `data/in-pin/{STATE}.json` |
+
+运行时：`loadRealRow(dataFileId, regionCode)` 只拉当前地区。
+
+## License
+
+见 [LICENSE](./LICENSE)。
